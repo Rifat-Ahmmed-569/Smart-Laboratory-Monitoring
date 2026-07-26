@@ -1,0 +1,3458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SCS-RG · Smart Campus Safety &amp; Response Grid</title>
+<meta name="description" content="Smart Campus Safety & Response Grid — real-time hazard detection across campus laboratories. Sense. Analyze. Prioritize. Respond." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+
+<style>
+
+  /* ==========================================================
+     SCS-RG · Design tokens (navy + green from brand identity)
+     ========================================================== */
+  :root {
+    --navy-950: #0A1A38;
+    --navy-900: #0F2444;
+    --navy-800: #14315C;
+    --navy-700: #1B3A6E;   /* Brand primary */
+    --navy-600: #24508F;
+    --navy-500: #3465AB;
+
+    --green-700: #1F7A3A;
+    --green-600: #2E9F4E;  /* Brand accent */
+    --green-500: #4ADE80;
+    --green-400: #86EFAC;
+
+    --amber-500: #F59E0B;
+    --amber-400: #FBBF24;
+    --red-600:   #DC2626;
+    --red-500:   #EF4444;
+    --red-400:   #F87171;
+
+    --cyan-500:  #06B6D4;
+    --violet-500:#8B5CF6;
+
+    /* Light theme surfaces */
+    --bg:         #F4F6FB;
+    --bg-elev:    #FFFFFF;
+    --bg-sunken:  #EEF1F7;
+    --border:     #E1E7F0;
+    --border-strong:#CBD4E2;
+    --text:       #0F172A;
+    --text-muted: #55627A;
+    --text-dim:   #8590A6;
+
+    --sidebar-bg: #0F2444;
+    --sidebar-text:#B8C4D9;
+    --sidebar-active-bg: rgba(46,159,78,0.14);
+    --sidebar-active-text:#FFFFFF;
+    --topbar-bg: #FFFFFF;
+
+    --shadow-sm: 0 1px 2px rgba(15,36,68,.06);
+    --shadow-md: 0 4px 14px rgba(15,36,68,.08);
+    --shadow-lg: 0 12px 32px rgba(15,36,68,.12);
+    --shadow-glow-green: 0 0 0 3px rgba(46,159,78,.15);
+
+    --radius-sm: 6px;
+    --radius:    10px;
+    --radius-lg: 14px;
+    --radius-xl: 20px;
+
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+    --dur-fast: 140ms;
+    --dur:      220ms;
+    --dur-slow: 420ms;
+
+    --font-sans: 'Inter', system-ui, -apple-system, Segoe UI, sans-serif;
+    --font-display: 'Space Grotesk', 'Inter', sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  html[data-theme="dark"] {
+    --bg:         #060F22;
+    --bg-elev:    #0C1A35;
+    --bg-sunken:  #081432;
+    --border:     #17264A;
+    --border-strong:#213661;
+    --text:       #E7ECF5;
+    --text-muted: #93A2BE;
+    --text-dim:   #6A7A98;
+    --sidebar-bg: #050C1E;
+    --sidebar-text:#94A3BE;
+    --sidebar-active-bg: rgba(46,159,78,0.18);
+    --sidebar-active-text:#FFFFFF;
+    --topbar-bg: #0C1A35;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
+    --shadow-md: 0 4px 14px rgba(0,0,0,.4);
+    --shadow-lg: 0 12px 32px rgba(0,0,0,.55);
+  }
+
+  /* ---------- Base ---------- */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+  #screen-dash {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  a { color: inherit; text-decoration: none; }
+  button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); background-clip: padding-box; border: 2px solid transparent; }
+
+  /* ---------- Layout ---------- */
+  .app {
+    display: grid;
+    grid-template-columns: 248px 1fr;
+    grid-template-rows: 64px 1fr;
+    grid-template-areas:
+      "sidebar topbar"
+      "sidebar main";
+    min-height: 100vh;
+  }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar {
+    grid-area: sidebar;
+    background: var(--sidebar-bg);
+    color: var(--sidebar-text);
+    display: flex;
+    flex-direction: column;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    z-index: 40;
+    border-right: 1px solid rgba(255,255,255,0.04);
+  }
+  .brand {
+    padding: 18px 20px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .brand-mark {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--navy-700), var(--navy-600));
+    display: grid; place-items: center;
+    position: relative;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08), 0 2px 6px rgba(0,0,0,0.35);
+  }
+  .brand-mark::after {
+    content: "";
+    position: absolute; inset: 6px;
+    border: 1.5px solid var(--green-500);
+    border-radius: 6px;
+    opacity: 0.9;
+  }
+  .brand-mark svg { position: relative; z-index: 1; }
+  .brand-name {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #fff;
+    font-size: 16px;
+    line-height: 1.1;
+  }
+  .brand-sub {
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--green-500);
+    margin-top: 2px;
+    font-weight: 600;
+  }
+
+  .nav {
+    padding: 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    overflow-y: auto;
+  }
+  .nav-section {
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #4E5F82;
+    padding: 14px 12px 6px;
+    font-weight: 600;
+  }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    font-weight: 500;
+    font-size: 13.5px;
+    transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+    position: relative;
+    text-align: left;
+    width: 100%;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.04); color: #fff; }
+  .nav-item:active { transform: scale(0.98); }
+  .nav-item.active {
+    background: var(--sidebar-active-bg);
+    color: var(--sidebar-active-text);
+  }
+  .nav-item.active::before {
+    content: "";
+    position: absolute;
+    left: -12px; top: 8px; bottom: 8px;
+    width: 3px;
+    background: var(--green-500);
+    border-radius: 0 3px 3px 0;
+  }
+  .nav-item .icon { width: 18px; height: 18px; flex-shrink: 0; color: currentColor; }
+  .nav-item .badge {
+    margin-left: auto;
+    background: var(--red-500);
+    color: #fff;
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 10px;
+    min-width: 20px;
+    text-align: center;
+  }
+  .nav-item .badge.dim { background: rgba(255,255,255,0.12); color: #B8C4D9; }
+
+  .sidebar-footer {
+    padding: 14px 16px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    font-size: 11px;
+    color: #4E5F82;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .sidebar-footer .version { font-family: var(--font-mono); color: var(--green-500); }
+
+  /* ---------- Topbar ---------- */
+  .topbar {
+    grid-area: topbar;
+    background: var(--topbar-bg);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    gap: 20px;
+    position: sticky; top: 0;
+    z-index: 30;
+    backdrop-filter: saturate(140%) blur(8px);
+  }
+  html[data-theme="dark"] .topbar { background: rgba(12,26,53,0.88); }
+
+  .topbar-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 16px;
+    letter-spacing: -0.01em;
+  }
+  .topbar-title .crumb { color: var(--text-dim); font-weight: 500; }
+  .topbar-title .crumb::after { content: " / "; margin: 0 6px; color: var(--text-dim); }
+
+  .topbar-spacer { flex: 1; }
+
+  .topbar-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: var(--bg-sunken);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+  .topbar-chip.mono { font-family: var(--font-mono); }
+  .topbar-chip .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-dim);
+    box-shadow: 0 0 0 0 rgba(46,159,78,0);
+  }
+  .topbar-chip.ok .dot { background: var(--green-600); animation: pulse-dot 2.4s ease-in-out infinite; }
+  .topbar-chip.ok { color: var(--green-700); background: rgba(46,159,78,0.08); border-color: rgba(46,159,78,0.25); }
+  html[data-theme="dark"] .topbar-chip.ok { color: var(--green-400); }
+  .topbar-chip.warn .dot { background: var(--amber-500); animation: pulse-dot 1.2s ease-in-out infinite; }
+  .topbar-chip.warn { color: #92600A; background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.28); }
+  html[data-theme="dark"] .topbar-chip.warn { color: var(--amber-400); }
+  .topbar-chip.crit .dot { background: var(--red-500); animation: pulse-dot 0.7s ease-in-out infinite; }
+  .topbar-chip.crit { color: #B91C1C; background: rgba(239,68,68,0.09); border-color: rgba(239,68,68,0.3); }
+  html[data-theme="dark"] .topbar-chip.crit { color: var(--red-400); }
+  .topbar-chip.demo { color: var(--violet-500); background: rgba(139,92,246,0.09); border-color: rgba(139,92,246,0.28); }
+  .topbar-chip.demo .dot { background: var(--violet-500); animation: pulse-dot 1.6s ease-in-out infinite; }
+
+  @keyframes pulse-dot {
+    0%,100% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
+    50% { box-shadow: 0 0 0 4px transparent; opacity: 0.75; }
+  }
+
+  .icon-btn {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    display: grid; place-items: center;
+    color: var(--text-muted);
+    transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+    position: relative;
+  }
+  .icon-btn:hover { background: var(--bg-sunken); color: var(--text); }
+  .icon-btn:active { transform: scale(0.94); }
+  .icon-btn .notif-dot {
+    position: absolute;
+    top: 8px; right: 8px;
+    width: 8px; height: 8px;
+    background: var(--red-500);
+    border-radius: 50%;
+    border: 2px solid var(--topbar-bg);
+  }
+
+  /* ---------- Main ---------- */
+  .main {
+    grid-area: main;
+    padding: 24px 28px 40px;
+    min-width: 0;
+  }
+  .view { display: none; animation: fade-in var(--dur-slow) var(--ease-out); }
+  .view.active { display: block; }
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .view-header {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .view-title {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 0 0 4px;
+  }
+  .view-sub {
+    color: var(--text-muted);
+    font-size: 13.5px;
+    margin: 0;
+  }
+
+  /* ---------- Overview stat cards ---------- */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  .stat {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px 18px;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    position: relative;
+    overflow: hidden;
+    transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+  }
+  .stat:hover { transform: translateY(-1px); box-shadow: var(--shadow-md); }
+  .stat-icon {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    display: grid; place-items: center;
+    flex-shrink: 0;
+  }
+  .stat-icon.navy { background: rgba(27,58,110,0.1); color: var(--navy-700); }
+  .stat-icon.green { background: rgba(46,159,78,0.12); color: var(--green-600); }
+  .stat-icon.amber { background: rgba(245,158,11,0.12); color: var(--amber-500); }
+  .stat-icon.red   { background: rgba(239,68,68,0.12); color: var(--red-500); }
+  .stat-icon.cyan  { background: rgba(6,182,212,0.12); color: var(--cyan-500); }
+  html[data-theme="dark"] .stat-icon.navy { background: rgba(52,101,171,0.18); color: #7BA5DC; }
+
+  .stat-body { flex: 1; min-width: 0; }
+  .stat-label {
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 0 0 6px;
+  }
+  .stat-value {
+    font-family: var(--font-display);
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    color: var(--text);
+  }
+  .stat-value .unit {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-left: 4px;
+    letter-spacing: 0;
+  }
+  .stat-meta {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    margin-top: 6px;
+    font-family: var(--font-mono);
+  }
+
+  /* ---------- Section grid ---------- */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 18px;
+    margin-bottom: 20px;
+  }
+  .grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .grid-auto {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+  }
+
+  .panel {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 18px 20px;
+  }
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    gap: 10px;
+  }
+  .panel-title {
+    font-family: var(--font-display);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .panel-title .accent-bar {
+    width: 3px; height: 14px;
+    background: var(--green-600);
+    border-radius: 2px;
+  }
+  .panel-sub {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+  }
+
+  /* ---------- Room cards ---------- */
+  .room-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
+  }
+  .room-card::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--green-600);
+    transition: background var(--dur) var(--ease-out);
+  }
+  .room-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+  .room-card:active { transform: translateY(0) scale(0.995); }
+  .room-card.state-1::before { background: var(--amber-500); }
+  .room-card.state-2::before,
+  .room-card.state-3::before { background: var(--red-500); }
+  .room-card.state-3 { animation: card-flash 1.2s ease-in-out infinite; }
+  @keyframes card-flash {
+    0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+    50% { box-shadow: 0 0 0 4px rgba(239,68,68,0.12); }
+  }
+  .room-card.offline::before { background: var(--text-dim); }
+  .room-card.offline { opacity: 0.75; }
+
+  .room-card.updated { animation: room-flash 0.6s var(--ease-out); }
+  @keyframes room-flash {
+    0% { background: rgba(46,159,78,0.08); }
+    100% { background: var(--bg-elev); }
+  }
+
+  .room-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .room-name {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 15px;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .room-id {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-top: 2px;
+  }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    background: rgba(46,159,78,0.12);
+    color: var(--green-700);
+    white-space: nowrap;
+  }
+  html[data-theme="dark"] .status-pill { color: var(--green-400); }
+  .status-pill.warn { background: rgba(245,158,11,0.14); color: #92600A; }
+  html[data-theme="dark"] .status-pill.warn { color: var(--amber-400); }
+  .status-pill.crit { background: rgba(239,68,68,0.14); color: #B91C1C; }
+  html[data-theme="dark"] .status-pill.crit { color: var(--red-400); }
+  .status-pill.offline { background: var(--bg-sunken); color: var(--text-dim); }
+  .status-pill .live-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: currentColor;
+    animation: pulse-dot 1.6s ease-in-out infinite;
+  }
+
+  .metric-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+  }
+  .metric {
+    background: var(--bg-sunken);
+    border-radius: 8px;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .metric-label {
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .metric-value {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .metric-value.warn { color: var(--amber-500); }
+  .metric-value.crit { color: var(--red-500); }
+
+  .room-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    padding-top: 4px;
+    border-top: 1px dashed var(--border);
+  }
+  .warnings-row {
+    display: flex; flex-wrap: wrap; gap: 4px;
+  }
+  .warn-chip {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(245,158,11,0.14);
+    color: #92600A;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  html[data-theme="dark"] .warn-chip { color: var(--amber-400); }
+  .warn-chip.crit { background: rgba(239,68,68,0.14); color: #B91C1C; }
+  html[data-theme="dark"] .warn-chip.crit { color: var(--red-400); }
+
+  /* ---------- Sensor detail cards ---------- */
+  .sensor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+  }
+  .sensor-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color var(--dur) var(--ease-out);
+  }
+  .sensor-card.warn { border-color: rgba(245,158,11,0.4); }
+  .sensor-card.crit { border-color: rgba(239,68,68,0.5); }
+  .sensor-head {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--text-muted);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .sensor-head .icon { width: 14px; height: 14px; }
+  .sensor-value {
+    font-family: var(--font-display);
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    line-height: 1;
+  }
+  .sensor-value .unit {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-left: 3px;
+  }
+  .sensor-status {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--green-700);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  html[data-theme="dark"] .sensor-status { color: var(--green-400); }
+  .sensor-card.warn .sensor-status { color: #92600A; }
+  html[data-theme="dark"] .sensor-card.warn .sensor-status { color: var(--amber-400); }
+  .sensor-card.crit .sensor-status { color: #B91C1C; }
+  html[data-theme="dark"] .sensor-card.crit .sensor-status { color: var(--red-400); }
+  .sensor-card.crit { animation: card-flash 1.2s ease-in-out infinite; }
+
+  .sensor-bar {
+    height: 4px;
+    background: var(--bg-sunken);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 2px;
+  }
+  .sensor-bar-fill {
+    height: 100%;
+    background: var(--green-600);
+    transition: width var(--dur-slow) var(--ease-out), background var(--dur) var(--ease-out);
+  }
+  .sensor-card.warn .sensor-bar-fill { background: var(--amber-500); }
+  .sensor-card.crit .sensor-bar-fill { background: var(--red-500); }
+
+  /* ---------- Charts ---------- */
+  .chart-wrap {
+    position: relative;
+    height: 220px;
+  }
+  .chart-wrap.tall { height: 280px; }
+
+  /* ---------- Alerts feed ---------- */
+  .alerts-feed {
+    display: flex; flex-direction: column; gap: 8px;
+    max-height: 520px;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+  .alert-item {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 12px;
+    background: var(--bg-sunken);
+    border-radius: 8px;
+    border-left: 3px solid var(--amber-500);
+  }
+  .alert-item.crit { border-left-color: var(--red-500); }
+  .alert-item.info { border-left-color: var(--cyan-500); }
+  .alert-item .a-icon {
+    width: 28px; height: 28px; border-radius: 6px;
+    display: grid; place-items: center;
+    background: rgba(245,158,11,0.14); color: var(--amber-500);
+    flex-shrink: 0;
+  }
+  .alert-item.crit .a-icon { background: rgba(239,68,68,0.14); color: var(--red-500); }
+  .alert-item.info .a-icon { background: rgba(6,182,212,0.14); color: var(--cyan-500); }
+  .alert-item .a-body { flex: 1; min-width: 0; }
+  .alert-item .a-title {
+    font-weight: 600; font-size: 13px; margin: 0 0 2px;
+  }
+  .alert-item .a-sub {
+    font-size: 11.5px; color: var(--text-muted);
+    font-family: var(--font-mono);
+  }
+  .alert-empty {
+    padding: 30px 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  /* ---------- MQTT monitor ---------- */
+  .mqtt-log {
+    background: var(--bg-sunken);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    max-height: 480px;
+    overflow-y: auto;
+    line-height: 1.6;
+  }
+  .log-entry {
+    padding: 6px 8px;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .log-entry:hover { background: var(--bg-elev); }
+  .log-time { color: var(--text-dim); flex-shrink: 0; }
+  .log-topic { color: var(--green-600); font-weight: 600; flex-shrink: 0; }
+  .log-body { color: var(--text); word-break: break-all; }
+  .log-entry.sys .log-body { color: var(--cyan-500); font-style: italic; }
+  .log-entry.err .log-body { color: var(--red-500); }
+
+  .json-viewer {
+    background: var(--navy-950);
+    color: #E7ECF5;
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    max-height: 320px;
+    overflow: auto;
+    line-height: 1.55;
+    border: 1px solid var(--border);
+  }
+  .json-viewer .k { color: #86EFAC; }
+  .json-viewer .s { color: #93C5FD; }
+  .json-viewer .n { color: #FBBF24; }
+  .json-viewer .b { color: #F472B6; }
+  .json-viewer .nl { color: #6A7A98; }
+
+  /* ---------- Toast ---------- */
+  .toast-host {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    display: flex; flex-direction: column;
+    gap: 10px;
+    z-index: 100;
+    max-width: 380px;
+  }
+  .toast {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--green-600);
+    padding: 12px 14px;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    display: flex; gap: 10px; align-items: flex-start;
+    animation: toast-in var(--dur-slow) var(--ease-out);
+    min-width: 280px;
+  }
+  .toast.warn { border-left-color: var(--amber-500); }
+  .toast.crit { border-left-color: var(--red-500); }
+  .toast.info { border-left-color: var(--cyan-500); }
+  .toast .t-icon {
+    width: 22px; height: 22px; border-radius: 5px;
+    display: grid; place-items: center; flex-shrink: 0;
+    background: rgba(46,159,78,0.14); color: var(--green-600);
+    margin-top: 1px;
+  }
+  .toast.warn .t-icon { background: rgba(245,158,11,0.14); color: var(--amber-500); }
+  .toast.crit .t-icon { background: rgba(239,68,68,0.14); color: var(--red-500); }
+  .toast.info .t-icon { background: rgba(6,182,212,0.14); color: var(--cyan-500); }
+  .toast .t-title { font-weight: 600; font-size: 13px; margin: 0 0 2px; }
+  .toast .t-body { font-size: 12px; color: var(--text-muted); margin: 0; }
+  .toast.leaving { animation: toast-out 240ms var(--ease-out) forwards; }
+  @keyframes toast-in {
+    from { transform: translateX(20px); opacity: 0; }
+    to   { transform: translateX(0); opacity: 1; }
+  }
+  @keyframes toast-out {
+    to { transform: translateX(20px); opacity: 0; }
+  }
+
+  /* ---------- Modal ---------- */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(6, 15, 34, 0.6);
+    backdrop-filter: blur(4px);
+    display: none;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 40px 24px;
+    z-index: 90;
+    animation: fade-in var(--dur) var(--ease-out);
+    overflow-y: auto;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    max-width: 960px;
+    width: 100%;
+    box-shadow: var(--shadow-lg);
+    animation: modal-in var(--dur-slow) var(--ease-out);
+    overflow: hidden;
+  }
+  @keyframes modal-in {
+    from { transform: translateY(12px) scale(0.98); opacity: 0; }
+    to { transform: translateY(0) scale(1); opacity: 1; }
+  }
+  .modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-elev);
+  }
+  .modal-title {
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+  .modal-title .subtitle {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 500;
+    margin-top: 2px;
+    letter-spacing: 0.04em;
+  }
+  .modal-body { padding: 20px 24px 24px; }
+
+  /* ---------- Utility ---------- */
+  .hidden { display: none !important; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .demo-banner {
+    background: linear-gradient(90deg, rgba(139,92,246,0.12), rgba(139,92,246,0.04));
+    border: 1px solid rgba(139,92,246,0.25);
+    color: var(--violet-500);
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    font-size: 12.5px;
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 18px;
+    font-weight: 500;
+  }
+  .demo-banner .icon { width: 16px; height: 16px; }
+
+  /* ---------- Skeleton ---------- */
+  .skeleton {
+    background: linear-gradient(90deg, var(--bg-sunken) 25%, var(--border) 50%, var(--bg-sunken) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s linear infinite;
+    border-radius: 6px;
+  }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 1200px) {
+    .stat-grid { grid-template-columns: repeat(2, 1fr); }
+    .grid-2 { grid-template-columns: 1fr; }
+    .grid-3 { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 900px) {
+    .app { grid-template-columns: 1fr; grid-template-areas: "topbar" "main"; }
+    .sidebar {
+      position: fixed;
+      left: 0; top: 0; bottom: 0;
+      width: 260px;
+      transform: translateX(-100%);
+      transition: transform var(--dur-slow) var(--ease-out);
+    }
+    .sidebar.open { transform: translateX(0); box-shadow: var(--shadow-lg); }
+    .sidebar-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 39;
+      display: none;
+    }
+    .sidebar-backdrop.open { display: block; }
+    .topbar-title .crumb { display: none; }
+    .stat-grid { grid-template-columns: 1fr 1fr; }
+    .main { padding: 18px 16px 40px; }
+  }
+  @media (max-width: 620px) {
+    .stat-grid { grid-template-columns: 1fr; }
+    .topbar { padding: 0 14px; gap: 8px; }
+    .topbar-chip { padding: 5px 9px; font-size: 11px; }
+    .topbar-chip .label-full { display: none; }
+    .metric-row { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+
+  /* focus */
+  :focus-visible { outline: 2px solid var(--green-500); outline-offset: 2px; border-radius: 4px; }
+
+/* ==============================================================
+   SCS-RG · Landing + gate  (all rules scoped, zero dashboard bleed)
+   ============================================================== */
+#lp, #screen-gate {
+  --flame:#E63329;
+  --gas:#2196F3;
+  --water:#29A0DC;
+  --amber:#F59E0B;
+  --red:#DC2626;
+  --paper:#F7F9FC;
+  --paper-2:#FFFFFF;
+  --line:#DEE5F0;
+  --ink:#0B1B33;
+  --ink-mid:#4C5C77;
+  --ink-dim:#8593A9;
+  --font-body:'Inter',system-ui,sans-serif;
+  --ease-lp:cubic-bezier(.22,1,.36,1);
+  --ease-io:cubic-bezier(.65,0,.35,1);
+  --gut:clamp(20px,5vw,64px);
+  --maxw:1240px;
+}
+
+/* screen switching */
+#screen-landing, #screen-gate, #screen-dash { display:none; }
+body.mode-landing #screen-landing { display:block; }
+body.mode-gate    #screen-gate    { display:flex; }
+body.mode-dash    #screen-dash    { display:block; }
+body.mode-landing { background:var(--paper); }
+body.mode-gate    { background:#0A1A38; }
+
+#lp{
+  font-family:var(--font-body);
+  background:var(--paper);
+  color:var(--ink);
+  line-height:1.6;
+  font-size:16px;
+}
+#lp *{box-sizing:border-box}
+#lp a{color:inherit;text-decoration:none}
+#lp button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+#lp svg{display:block}
+#lp p{margin:0}
+#lp h1,#lp h2,#lp h3{
+  font-family:var(--font-display);font-weight:700;letter-spacing:-.03em;margin:0;line-height:1.05;
+}
+#lp h2{font-size:clamp(1.9rem,3.6vw,2.7rem)}
+#lp h3{font-size:1.05rem;letter-spacing:-.015em;line-height:1.3}
+#lp ::selection{background:rgba(46,159,78,.25)}
+
+#lp .lp-wrap{max-width:var(--maxw);margin:0 auto;padding:0 var(--gut)}
+
+/* ---------- type ---------- */
+#lp .lp-eyebrow{
+  font-family:var(--font-mono);font-size:11px;letter-spacing:.24em;
+  text-transform:uppercase;font-weight:500;color:var(--green-600);
+  display:flex;align-items:center;gap:10px;
+}
+#lp .lp-eyebrow::before{content:"";width:22px;height:1.5px;background:var(--green-600);flex-shrink:0}
+#lp .lp-eyebrow.on-dark{color:var(--green-500)}
+#lp .lp-eyebrow.on-dark::before{background:var(--green-500)}
+#lp .lp-lede{font-size:clamp(1rem,1.35vw,1.12rem);color:var(--ink-mid);line-height:1.65;max-width:56ch}
+#lp .lp-lede.on-dark{color:#A9BAD5}
+
+/* ---------- buttons ---------- */
+#lp .lp-btn{
+  display:inline-flex;align-items:center;gap:9px;
+  padding:13px 22px;border-radius:9px;font-weight:600;font-size:14px;letter-spacing:-.01em;
+  transition:transform 140ms var(--ease-lp),background 220ms var(--ease-lp),box-shadow 220ms var(--ease-lp),border-color 220ms var(--ease-lp);
+  will-change:transform;
+}
+#lp .lp-btn:active{transform:scale(.97)}
+#lp .lp-btn-primary{background:var(--green-600);color:#fff;box-shadow:0 4px 16px rgba(46,159,78,.28)}
+#lp .lp-btn-primary:hover{background:var(--green-700);box-shadow:0 6px 22px rgba(46,159,78,.34)}
+#lp .lp-btn-ghost{border:1.5px solid rgba(255,255,255,.22);color:#fff}
+#lp .lp-btn-ghost:hover{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.4)}
+
+/* ---------- nav ---------- */
+#lp .lp-nav{
+  position:fixed;top:0;left:0;right:0;z-index:60;
+  border-bottom:1px solid transparent;
+  transition:background 300ms var(--ease-lp),border-color 300ms var(--ease-lp);
+}
+#lp .lp-nav.scrolled{
+  background:rgba(10,26,56,.86);
+  backdrop-filter:saturate(160%) blur(14px);
+  border-bottom-color:rgba(255,255,255,.09);
+}
+#lp .lp-nav-inner{
+  max-width:var(--maxw);margin:0 auto;padding:16px var(--gut);
+  display:flex;align-items:center;gap:26px;
+}
+#lp .lp-logo{display:flex;align-items:center;gap:11px}
+#lp .lp-mark{
+  width:38px;height:38px;border-radius:10px;flex-shrink:0;
+  background:linear-gradient(140deg,var(--navy-700),var(--navy-600));
+  display:grid;place-items:center;position:relative;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);
+}
+#lp .lp-mark::after{content:"";position:absolute;inset:5px;border:1.5px solid var(--green-500);border-radius:6px}
+#lp .lp-mark svg{position:relative;z-index:1}
+#lp .lp-logo-text{color:#fff;line-height:1.05}
+#lp .lp-logo-text b{font-family:var(--font-display);font-size:17px;font-weight:700;letter-spacing:.01em;display:block}
+#lp .lp-logo-text span{font-family:var(--font-mono);font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--green-500)}
+#lp .lp-nav-links{display:flex;gap:4px;margin-left:auto}
+#lp .lp-nav-links a{
+  padding:8px 14px;border-radius:7px;font-size:13.5px;font-weight:500;color:#B6C5DE;
+  transition:color 200ms var(--ease-lp),background 200ms var(--ease-lp);
+}
+#lp .lp-nav-links a:hover{color:#fff;background:rgba(255,255,255,.07)}
+#lp .lp-nav-cta{
+  padding:9px 17px;border-radius:8px;font-size:13.5px;font-weight:600;
+  background:var(--green-600);color:#fff;
+  transition:transform 140ms var(--ease-lp),background 220ms var(--ease-lp);
+}
+#lp .lp-nav-cta:hover{background:var(--green-700)}
+#lp .lp-nav-cta:active{transform:scale(.96)}
+
+/* ---------- hero ---------- */
+#lp .lp-hero{
+  position:relative;color:#fff;padding:calc(96px + 6vh) 0 0;overflow:hidden;
+  background:
+    radial-gradient(1100px 620px at 78% 22%,rgba(36,80,143,.5),transparent 62%),
+    radial-gradient(760px 520px at 8% 88%,rgba(46,159,78,.15),transparent 60%),
+    var(--navy-950);
+}
+#lp .lp-hero-bg{
+  position:absolute;inset:-10% 0;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);
+  background-size:64px 64px;
+  mask-image:radial-gradient(ellipse 90% 70% at 50% 40%,#000 30%,transparent 100%);
+  -webkit-mask-image:radial-gradient(ellipse 90% 70% at 50% 40%,#000 30%,transparent 100%);
+}
+#lp .lp-hero-inner{
+  position:relative;z-index:1;max-width:var(--maxw);margin:0 auto;padding:0 var(--gut);
+  display:grid;grid-template-columns:1fr .92fr;gap:56px;align-items:center;
+  min-height:min(76vh,660px);
+}
+#lp .lp-hero-copy{padding:40px 0 64px}
+#lp .lp-hero h1{font-size:clamp(2.5rem,5.6vw,4.3rem);margin:22px 0 20px;color:#fff}
+#lp .lp-hero h1 .accent{color:var(--green-500)}
+#lp .lp-hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:34px}
+
+#lp .lp-pill{
+  display:inline-flex;align-items:center;gap:9px;
+  padding:6px 13px 6px 10px;border-radius:99px;
+  background:rgba(46,159,78,.13);border:1px solid rgba(46,159,78,.32);
+  font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--green-500);font-weight:500;margin-bottom:4px;
+}
+#lp .lp-pill .beacon{width:7px;height:7px;border-radius:50%;background:var(--green-500);position:relative}
+#lp .lp-pill .beacon::after{
+  content:"";position:absolute;inset:0;border-radius:50%;background:var(--green-500);
+  animation:lp-beacon 2s var(--ease-io) infinite;
+}
+@keyframes lp-beacon{0%{transform:scale(1);opacity:.7}70%,100%{transform:scale(3.4);opacity:0}}
+
+/* ---------- hero schematic ---------- */
+#lp .lp-schematic{position:relative;width:100%;aspect-ratio:1/.92;max-width:520px;margin-left:auto}
+#lp .lp-schematic svg{width:100%;height:100%;overflow:visible}
+#lp .sch-ring{fill:none;stroke:rgba(255,255,255,.13);stroke-width:1.2}
+#lp .sch-ring.dashed{
+  stroke-dasharray:3 7;stroke:rgba(255,255,255,.16);
+  transform-origin:250px 230px;animation:lp-ring 46s linear infinite;
+}
+@keyframes lp-ring{to{transform:rotate(360deg)}}
+#lp .sch-link{stroke:rgba(255,255,255,.16);stroke-width:1.4;fill:none;transition:stroke 400ms var(--ease-lp),stroke-width 400ms var(--ease-lp)}
+#lp .sch-link.hot{stroke:var(--red);stroke-width:2.4}
+#lp .sch-flow{
+  stroke:var(--green-500);stroke-width:2;fill:none;opacity:.85;
+  stroke-dasharray:5 190;stroke-linecap:round;animation:lp-flow 3.4s linear infinite;
+}
+#lp .sch-flow.d2{animation-delay:1.15s}
+#lp .sch-flow.d3{animation-delay:2.3s}
+@keyframes lp-flow{to{stroke-dashoffset:-195}}
+#lp .node-body{fill:var(--navy-800);stroke:rgba(255,255,255,.22);stroke-width:1.4;transition:fill 400ms var(--ease-lp),stroke 400ms var(--ease-lp)}
+#lp .node-halo{fill:none;stroke:var(--green-500);stroke-width:1.6;opacity:0;transform-box:fill-box;transform-origin:center}
+#lp .node-label{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.14em;fill:#8FA4C4;text-transform:uppercase}
+#lp .node-val{font-family:var(--font-display);font-size:13px;font-weight:700;fill:#fff}
+#lp .node.alarm .node-body{fill:rgba(220,38,38,.22);stroke:var(--red)}
+#lp .node.alarm .node-val{fill:#FCA5A5}
+#lp .node.alarm .node-halo{stroke:var(--red);animation:lp-halo 1.15s var(--ease-io) infinite}
+@keyframes lp-halo{0%{opacity:.85;transform:scale(1)}100%{opacity:0;transform:scale(1.5)}}
+#lp .hub-core{fill:var(--navy-700);stroke:var(--green-500);stroke-width:2}
+#lp .hub-pulse{fill:none;stroke:var(--green-500);stroke-width:1.4;opacity:0;transform-box:fill-box;transform-origin:center;animation:lp-halo 2.6s var(--ease-io) infinite}
+#lp .hub-label{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.18em;fill:var(--green-500);text-transform:uppercase}
+
+#lp .sch-readout{
+  position:absolute;left:0;bottom:2%;
+  background:rgba(10,26,56,.9);border:1px solid rgba(255,255,255,.13);
+  border-radius:11px;padding:11px 15px;backdrop-filter:blur(10px);
+  display:flex;align-items:center;gap:11px;min-width:216px;
+  transition:border-color 400ms var(--ease-lp);
+}
+#lp .sch-readout.alarm{border-color:rgba(220,38,38,.55)}
+#lp .sch-readout .ro-dot{width:9px;height:9px;border-radius:50%;background:var(--green-500);flex-shrink:0;transition:background 300ms var(--ease-lp)}
+#lp .sch-readout.alarm .ro-dot{background:var(--red);animation:lp-blink .7s steps(2,end) infinite}
+@keyframes lp-blink{50%{opacity:.25}}
+#lp .ro-title{font-size:12.5px;font-weight:600;color:#fff;line-height:1.25;display:block}
+#lp .ro-sub{font-family:var(--font-mono);font-size:10px;color:#7E93B5;letter-spacing:.05em;margin-top:1px;display:block}
+
+/* ---------- spec strip ---------- */
+#lp .lp-specs{position:relative;z-index:1;border-top:1px solid rgba(255,255,255,.1);background:rgba(10,26,56,.55)}
+#lp .lp-specs-inner{max-width:var(--maxw);margin:0 auto;padding:0 var(--gut);display:grid;grid-template-columns:repeat(4,1fr)}
+#lp .lp-spec{padding:24px 0;border-right:1px solid rgba(255,255,255,.09)}
+#lp .lp-spec:last-child{border-right:none}
+#lp .lp-spec:not(:first-child){padding-left:26px}
+#lp .lp-spec .v{font-family:var(--font-display);font-size:1.6rem;font-weight:700;color:#fff;letter-spacing:-.02em;line-height:1}
+#lp .lp-spec .v em{font-style:normal;color:var(--green-500);font-size:1rem;margin-left:3px}
+#lp .lp-spec .k{font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#7E93B5;margin-top:7px}
+
+/* ---------- sections ---------- */
+#lp .lp-section{padding:clamp(64px,9vw,116px) 0}
+#lp .lp-head{margin-bottom:clamp(32px,4vw,52px);max-width:60ch}
+#lp .lp-head h2{margin:16px 0 14px}
+
+/* ---------- response chain ---------- */
+#lp .lp-chain-section{background:var(--paper-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+#lp .lp-chain{display:grid;grid-template-columns:repeat(4,1fr);position:relative;margin-top:8px}
+#lp .lp-chain::before{
+  content:"";position:absolute;top:26px;left:6%;right:6%;height:2px;border-radius:2px;opacity:.28;
+  background:linear-gradient(90deg,var(--green-600) 0%,var(--green-600) 25%,var(--amber) 62%,var(--red) 100%);
+}
+#lp .lp-chain-pulse{
+  position:absolute;top:21px;left:6%;width:12px;height:12px;border-radius:50%;
+  background:var(--green-500);box-shadow:0 0 0 5px rgba(74,222,128,.2);
+  animation:lp-chain 6.5s var(--ease-io) infinite;
+}
+@keyframes lp-chain{
+  0%{left:6%;background:var(--green-500);box-shadow:0 0 0 5px rgba(74,222,128,.2)}
+  30%{left:35%;background:var(--green-600);box-shadow:0 0 0 5px rgba(46,159,78,.2)}
+  60%{left:64%;background:var(--amber);box-shadow:0 0 0 5px rgba(245,158,11,.22)}
+  88%,100%{left:calc(94% - 12px);background:var(--red);box-shadow:0 0 0 5px rgba(220,38,38,.22)}
+}
+#lp .lp-step{padding:0 22px 0 0;position:relative}
+#lp .lp-step:first-child{padding-left:0}
+#lp .lp-step-node{
+  width:54px;height:54px;border-radius:14px;background:var(--paper-2);
+  border:2px solid var(--line);display:grid;place-items:center;position:relative;z-index:1;
+  color:var(--navy-700);transition:transform 260ms var(--ease-lp);
+}
+#lp .lp-step:hover .lp-step-node{transform:translateY(-3px)}
+#lp .lp-step[data-tone="sense"] .lp-step-node{border-color:rgba(46,159,78,.45);color:var(--green-600)}
+#lp .lp-step[data-tone="analyze"] .lp-step-node{border-color:rgba(27,58,110,.35);color:var(--navy-700)}
+#lp .lp-step[data-tone="prioritize"] .lp-step-node{border-color:rgba(245,158,11,.45);color:var(--amber)}
+#lp .lp-step[data-tone="respond"] .lp-step-node{border-color:rgba(220,38,38,.4);color:var(--red)}
+#lp .lp-step-num{font-family:var(--font-mono);font-size:10px;letter-spacing:.2em;color:var(--ink-dim);margin:20px 0 7px}
+#lp .lp-step h3{margin-bottom:9px}
+#lp .lp-step p{font-size:13.5px;color:var(--ink-mid);line-height:1.6;max-width:30ch}
+
+/* ---------- sensor matrix ---------- */
+#lp .lp-matrix{display:grid;grid-template-columns:repeat(auto-fit,minmax(238px,1fr));gap:16px}
+#lp .lp-sensor{
+  background:var(--paper-2);border:1px solid var(--line);border-radius:14px;padding:22px;
+  position:relative;overflow:hidden;
+  transition:transform 300ms var(--ease-lp),box-shadow 300ms var(--ease-lp),border-color 300ms var(--ease-lp);
+}
+#lp .lp-sensor::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--tone,var(--navy-700));opacity:.85}
+#lp .lp-sensor:hover{transform:translateY(-3px);box-shadow:0 14px 34px rgba(15,36,68,.09);border-color:var(--tone,var(--navy-700))}
+#lp .lp-sensor-icon{
+  width:40px;height:40px;border-radius:10px;display:grid;place-items:center;margin-bottom:16px;
+  background:color-mix(in srgb,var(--tone,var(--navy-700)) 12%,transparent);
+  color:var(--tone,var(--navy-700));
+}
+#lp .lp-sensor h3{margin-bottom:6px}
+#lp .lp-sensor .part{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.1em;color:var(--ink-dim);text-transform:uppercase;margin-bottom:11px}
+#lp .lp-sensor p{font-size:13px;color:var(--ink-mid);line-height:1.6}
+
+/* ---------- escalation ---------- */
+#lp .lp-ladder-section{
+  color:#fff;
+  background:radial-gradient(900px 500px at 85% 10%,rgba(36,80,143,.42),transparent 60%),var(--navy-950);
+}
+#lp .lp-ladder{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:8px}
+#lp .lp-rung{
+  border:1px solid rgba(255,255,255,.13);border-radius:14px;padding:24px;background:rgba(255,255,255,.03);
+  transition:transform 300ms var(--ease-lp),background 300ms var(--ease-lp);
+}
+#lp .lp-rung:hover{transform:translateY(-3px);background:rgba(255,255,255,.055)}
+#lp .lp-rung-tag{
+  display:inline-flex;align-items:center;gap:7px;font-family:var(--font-mono);font-size:10.5px;
+  letter-spacing:.16em;text-transform:uppercase;font-weight:600;padding:5px 11px;border-radius:99px;margin-bottom:18px;
+}
+#lp .lp-rung.ok .lp-rung-tag{background:rgba(46,159,78,.16);color:var(--green-500);border:1px solid rgba(46,159,78,.34)}
+#lp .lp-rung.warn .lp-rung-tag{background:rgba(245,158,11,.14);color:var(--amber);border:1px solid rgba(245,158,11,.34)}
+#lp .lp-rung.crit .lp-rung-tag{background:rgba(220,38,38,.15);color:#FCA5A5;border:1px solid rgba(220,38,38,.4)}
+#lp .lp-rung.ok{border-left:3px solid var(--green-600)}
+#lp .lp-rung.warn{border-left:3px solid var(--amber)}
+#lp .lp-rung.crit{border-left:3px solid var(--red)}
+#lp .lp-rung h3{color:#fff;margin-bottom:10px}
+#lp .lp-rung > p{font-size:13.5px;color:#A9BAD5;line-height:1.6;margin-bottom:18px}
+#lp .lp-rung dl{margin:0;display:grid;gap:9px;padding-top:16px;border-top:1px dashed rgba(255,255,255,.14)}
+#lp .lp-rung dl div{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+#lp .lp-rung dt{font-size:12.5px;color:#8FA4C4}
+#lp .lp-rung dd{margin:0;font-family:var(--font-mono);font-size:12px;color:#fff;font-weight:500;white-space:nowrap}
+
+/* ---------- pipeline ---------- */
+#lp .lp-pipeline{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:14px;align-items:stretch;margin-top:8px}
+#lp .lp-pipe{background:var(--paper-2);border:1px solid var(--line);border-radius:14px;padding:24px}
+#lp .lp-pipe .pc-label{font-family:var(--font-mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--green-600);margin-bottom:13px}
+#lp .lp-pipe h3{margin-bottom:9px}
+#lp .lp-pipe p{font-size:13px;color:var(--ink-mid);line-height:1.6}
+#lp .lp-pipe code{
+  font-family:var(--font-mono);font-size:11.5px;background:var(--paper);padding:3px 7px;
+  border-radius:5px;color:var(--navy-700);border:1px solid var(--line);display:inline-block;margin-top:12px;
+}
+#lp .lp-arrow{display:grid;place-items:center;color:var(--ink-dim)}
+
+/* ---------- CTA ---------- */
+#lp .lp-cta{
+  background:linear-gradient(135deg,var(--navy-700),var(--navy-900) 62%,var(--navy-950));
+  color:#fff;position:relative;overflow:hidden;
+}
+#lp .lp-cta::before{
+  content:"";position:absolute;inset:0;
+  background-image:linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);
+  background-size:52px 52px;
+  mask-image:radial-gradient(ellipse 70% 90% at 80% 50%,#000,transparent 75%);
+  -webkit-mask-image:radial-gradient(ellipse 70% 90% at 80% 50%,#000,transparent 75%);
+}
+#lp .lp-cta-inner{position:relative;z-index:1;display:flex;gap:40px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+#lp .lp-cta-inner h2{color:#fff;margin:16px 0 14px;max-width:18ch}
+
+/* ---------- footer ---------- */
+#lp .lp-footer{background:var(--navy-950);color:#7E93B5;padding:44px 0;border-top:1px solid rgba(255,255,255,.08)}
+#lp .lp-footer-inner{display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap;font-size:12.5px}
+#lp .lp-footer .tag{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--green-600)}
+#lp .lp-footer-links{display:flex;gap:20px}
+#lp .lp-footer-links a{transition:color 200ms var(--ease-lp)}
+#lp .lp-footer-links a:hover{color:#fff}
+
+/* ---------- responsive ---------- */
+@media (max-width:1000px){
+  #lp .lp-hero-inner{grid-template-columns:1fr;gap:8px;min-height:0}
+  #lp .lp-schematic{max-width:440px;margin:0 auto 56px}
+  #lp .lp-hero-copy{padding-bottom:24px}
+  #lp .lp-chain{grid-template-columns:repeat(2,1fr);gap:34px 22px}
+  #lp .lp-chain::before,#lp .lp-chain-pulse{display:none}
+  #lp .lp-ladder{grid-template-columns:1fr}
+  #lp .lp-pipeline{grid-template-columns:1fr}
+  #lp .lp-arrow{transform:rotate(90deg);padding:2px 0}
+}
+@media (max-width:820px){
+  #lp .lp-nav-links{display:none}
+  #lp .lp-nav-inner{gap:14px}
+  #lp .lp-nav-cta{margin-left:auto}
+  #lp .lp-specs-inner{grid-template-columns:repeat(2,1fr)}
+  #lp .lp-spec{border-right:none;border-bottom:1px solid rgba(255,255,255,.09);padding-left:0 !important}
+  #lp .lp-spec:nth-child(odd){border-right:1px solid rgba(255,255,255,.09);padding-right:20px}
+  #lp .lp-spec:nth-child(even){padding-left:20px !important}
+  #lp .lp-spec:nth-last-child(-n+2){border-bottom:none}
+}
+@media (max-width:560px){
+  #lp .lp-chain{grid-template-columns:1fr}
+  #lp .lp-cta-inner{flex-direction:column;align-items:flex-start}
+}
+
+/* ==============================================================
+   PASSWORD GATE
+   ============================================================== */
+#screen-gate{
+  min-height:100vh;align-items:center;justify-content:center;padding:24px;
+  font-family:var(--font-body);color:#fff;position:relative;overflow:hidden;
+  background:
+    radial-gradient(900px 560px at 70% 15%,rgba(36,80,143,.55),transparent 62%),
+    radial-gradient(700px 480px at 15% 90%,rgba(46,159,78,.16),transparent 62%),
+    #0A1A38;
+}
+#screen-gate *{box-sizing:border-box}
+#screen-gate button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+#screen-gate svg{display:block}
+#screen-gate .gate-bg{
+  position:absolute;inset:0;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);
+  background-size:56px 56px;
+  mask-image:radial-gradient(ellipse 80% 70% at 50% 45%,#000 20%,transparent 100%);
+  -webkit-mask-image:radial-gradient(ellipse 80% 70% at 50% 45%,#000 20%,transparent 100%);
+}
+#screen-gate .gate-card{
+  position:relative;z-index:1;width:100%;max-width:430px;
+  background:rgba(255,255,255,.045);
+  border:1px solid rgba(255,255,255,.13);
+  border-radius:20px;padding:38px 34px;
+  backdrop-filter:blur(18px) saturate(140%);
+  box-shadow:0 30px 70px rgba(3,10,26,.55);
+}
+#screen-gate .gate-lock{
+  width:52px;height:52px;border-radius:14px;display:grid;place-items:center;
+  background:rgba(46,159,78,.14);border:1px solid rgba(46,159,78,.34);
+  color:var(--green-500);margin-bottom:22px;
+}
+#screen-gate .gate-eyebrow{
+  font-family:var(--font-mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--green-500);margin-bottom:10px;
+}
+#screen-gate h2{
+  font-family:var(--font-display);font-size:1.65rem;font-weight:700;
+  letter-spacing:-.025em;margin:0 0 8px;color:#fff;line-height:1.15;
+}
+#screen-gate .gate-sub{font-size:13.5px;color:#A9BAD5;line-height:1.6;margin:0 0 26px}
+#screen-gate label{
+  display:block;font-family:var(--font-mono);font-size:10px;letter-spacing:.16em;
+  text-transform:uppercase;color:#8FA4C4;margin-bottom:8px;
+}
+#screen-gate .gate-input-wrap{position:relative}
+#screen-gate input{
+  width:100%;padding:14px 46px 14px 15px;border-radius:10px;
+  border:1.5px solid rgba(255,255,255,.16);background:rgba(10,26,56,.6);
+  color:#fff;font-family:var(--font-mono);font-size:14px;letter-spacing:.06em;
+  transition:border-color 200ms var(--ease-lp),box-shadow 200ms var(--ease-lp),background 200ms var(--ease-lp);
+}
+#screen-gate input::placeholder{color:#5A6E8E;letter-spacing:.2em}
+#screen-gate input:focus{
+  outline:none;border-color:var(--green-600);background:rgba(10,26,56,.85);
+  box-shadow:0 0 0 3px rgba(46,159,78,.18);
+}
+#screen-gate .gate-eye{
+  position:absolute;right:6px;top:50%;transform:translateY(-50%);
+  width:34px;height:34px;border-radius:8px;display:grid;place-items:center;color:#7E93B5;
+  transition:color 180ms var(--ease-lp),background 180ms var(--ease-lp);
+}
+#screen-gate .gate-eye:hover{color:#fff;background:rgba(255,255,255,.07)}
+#screen-gate .gate-err{
+  display:none;margin-top:14px;padding:11px 13px;border-radius:9px;
+  background:rgba(220,38,38,.12);border:1px solid rgba(220,38,38,.35);
+  color:#FCA5A5;font-size:12.5px;font-weight:500;
+}
+#screen-gate .gate-err.show{display:block}
+#screen-gate .gate-btn{
+  width:100%;margin-top:20px;padding:14px;border-radius:10px;
+  background:var(--green-600);color:#fff;font-weight:600;font-size:14.5px;
+  display:inline-flex;align-items:center;justify-content:center;gap:9px;
+  box-shadow:0 4px 18px rgba(46,159,78,.3);
+  transition:transform 140ms var(--ease-lp),background 220ms var(--ease-lp);
+}
+#screen-gate .gate-btn:hover{background:var(--green-700)}
+#screen-gate .gate-btn:active{transform:scale(.98)}
+#screen-gate .gate-back{
+  display:inline-flex;align-items:center;gap:7px;margin-top:22px;
+  font-size:12.5px;color:#7E93B5;transition:color 200ms var(--ease-lp);
+}
+#screen-gate .gate-back:hover{color:#fff}
+#screen-gate .gate-meta{
+  margin-top:26px;padding-top:18px;border-top:1px dashed rgba(255,255,255,.14);
+  display:grid;gap:9px;font-size:11.5px;
+}
+#screen-gate .gate-meta div{display:flex;justify-content:space-between;gap:12px}
+#screen-gate .gate-meta span:first-child{color:#6A7F9F}
+#screen-gate .gate-meta span:last-child{font-family:var(--font-mono);color:var(--green-500)}
+@keyframes gate-shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-7px)}40%{transform:translateX(7px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
+#screen-gate .gate-card.shake{animation:gate-shake 420ms var(--ease-io)}
+
+/* reduced motion */
+@media (prefers-reduced-motion:reduce){
+  #lp *,#lp *::before,#lp *::after,#screen-gate *{
+    animation-duration:.001ms !important;transition-duration:.001ms !important;
+  }
+}
+#lp :focus-visible,#screen-gate :focus-visible{outline:2px solid var(--green-500);outline-offset:3px;border-radius:5px}
+
+</style>
+</head>
+<body class="mode-landing">
+
+<!-- ============================================================
+     SCREEN 1 · LANDING
+     ============================================================ -->
+<div id="screen-landing">
+<div id="lp">
+
+  <nav class="lp-nav" id="lpNav">
+    <div class="lp-nav-inner">
+      <a class="lp-logo" href="#top">
+        <span class="lp-mark">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </span>
+        <span class="lp-logo-text"><b>SCS&#8209;RG</b><span>Response Grid</span></span>
+      </a>
+      <div class="lp-nav-links">
+        <a href="#chain">How it works</a>
+        <a href="#sensors">Sensors</a>
+        <a href="#escalation">Escalation</a>
+        <a href="#pipeline">Architecture</a>
+      </div>
+      <button class="lp-nav-cta" data-go-gate>Live dashboard</button>
+    </div>
+  </nav>
+
+  <header class="lp-hero" id="top">
+    <div class="lp-hero-bg" id="lpHeroBg"></div>
+    <div class="lp-hero-inner">
+
+      <div class="lp-hero-copy">
+        <span class="lp-pill" data-hero><span class="beacon"></span>Grid armed · 3 laboratories</span>
+        <h1 data-hero>A lab shouldn't have to<br><span class="accent">wait for smoke</span> to speak up.</h1>
+        <p class="lp-lede on-dark" data-hero>
+          SCS-RG watches every laboratory on campus at once — gas, flame, flood, heat and occupancy —
+          and turns a rising sensor reading into a named room, a severity and an action, in under two seconds.
+        </p>
+        <div class="lp-hero-actions" data-hero>
+          <button class="lp-btn lp-btn-primary" data-go-gate>
+            Live dashboard
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+          </button>
+          <a class="lp-btn lp-btn-ghost" href="#chain">See how it responds</a>
+        </div>
+      </div>
+
+      <div class="lp-schematic" data-hero-art>
+        <svg viewBox="0 0 500 460" role="img" aria-label="Campus sensor mesh: three laboratory nodes reporting to a central gateway">
+          <circle class="sch-ring" cx="250" cy="230" r="196"/>
+          <circle class="sch-ring dashed" cx="250" cy="230" r="150"/>
+
+          <path class="sch-link" id="link-a" d="M250 86 L250 190"/>
+          <path class="sch-link" id="link-b" d="M126 350 L214 262"/>
+          <path class="sch-link" id="link-c" d="M374 350 L286 262"/>
+
+          <path class="sch-flow" d="M250 86 L250 190"/>
+          <path class="sch-flow d2" d="M126 350 L214 262"/>
+          <path class="sch-flow d3" d="M374 350 L286 262"/>
+
+          <circle class="hub-pulse" cx="250" cy="230" r="42"/>
+          <circle class="hub-core" cx="250" cy="230" r="38"/>
+          <g transform="translate(250,222)">
+            <path d="M0 14s9-4.6 9-11.2V-3L0-6.4-9-3v5.8C-9 9.4 0 14 0 14z" fill="none" stroke="#4ADE80" stroke-width="1.9" stroke-linejoin="round"/>
+          </g>
+          <text class="hub-label" x="250" y="252" text-anchor="middle">Gateway</text>
+
+          <g class="node" id="node-a">
+            <circle class="node-halo" cx="250" cy="60" r="42"/>
+            <rect class="node-body" x="192" y="24" width="116" height="66" rx="15"/>
+            <text class="node-label" x="250" y="48" text-anchor="middle">IoT Lab</text>
+            <text class="node-val" x="250" y="70" text-anchor="middle" data-val>30.5°C</text>
+          </g>
+          <g class="node" id="node-b">
+            <circle class="node-halo" cx="126" cy="376" r="42"/>
+            <rect class="node-body" x="68" y="340" width="116" height="66" rx="15"/>
+            <text class="node-label" x="126" y="364" text-anchor="middle">Robotics</text>
+            <text class="node-val" x="126" y="386" text-anchor="middle" data-val>MQ2 88</text>
+          </g>
+          <g class="node" id="node-c">
+            <circle class="node-halo" cx="374" cy="376" r="42"/>
+            <rect class="node-body" x="316" y="340" width="116" height="66" rx="15"/>
+            <text class="node-label" x="374" y="364" text-anchor="middle">Server Rm</text>
+            <text class="node-val" x="374" y="386" text-anchor="middle" data-val>11% H₂O</text>
+          </g>
+        </svg>
+
+        <div class="sch-readout" id="roBox">
+          <span class="ro-dot"></span>
+          <span>
+            <span class="ro-title" id="roTitle">All rooms nominal</span>
+            <span class="ro-sub" id="roSub">koba-samsu · 3 nodes reporting</span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="lp-specs">
+      <div class="lp-specs-inner">
+        <div class="lp-spec" data-spec><div class="v"><span data-count="7">0</span><em>types</em></div><div class="k">Sensor classes per room</div></div>
+        <div class="lp-spec" data-spec><div class="v">&lt;<span data-count="2">0</span><em>sec</em></div><div class="k">Sense to on-screen alert</div></div>
+        <div class="lp-spec" data-spec><div class="v"><span data-count="3">0</span><em>tier</em></div><div class="k">Normal · Warning · Critical</div></div>
+        <div class="lp-spec" data-spec><div class="v">∞<em>rooms</em></div><div class="k">Add a lab, no redeploy</div></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ---------- Response chain ---------- -->
+  <section class="lp-section lp-chain-section" id="chain">
+    <div class="lp-wrap">
+      <div class="lp-head" data-head>
+        <span class="lp-eyebrow">Sense · Analyze · Prioritize · Respond</span>
+        <h2>Four steps between a reading and a response.</h2>
+        <p class="lp-lede">The grid never just reports numbers. Every packet is scored, ranked against every other room on campus, and turned into something a person can act on.</p>
+      </div>
+
+      <div class="lp-chain">
+        <div class="lp-chain-pulse"></div>
+
+        <div class="lp-step" data-tone="sense" data-stagger>
+          <div class="lp-step-node"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg></div>
+          <div class="lp-step-num">STEP 01</div>
+          <h3>Sense</h3>
+          <p>An ESP32 in each lab samples gas, flame, heat, humidity, water and motion, then publishes one consolidated JSON packet over MQTT.</p>
+        </div>
+
+        <div class="lp-step" data-tone="analyze" data-stagger>
+          <div class="lp-step-node"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 4 3 5-6"/></svg></div>
+          <div class="lp-step-num">STEP 02</div>
+          <h3>Analyze</h3>
+          <p>Every reading is checked against a configurable threshold band and folded into a rolling 60-sample history, so trends show up before limits do.</p>
+        </div>
+
+        <div class="lp-step" data-tone="prioritize" data-stagger>
+          <div class="lp-step-node"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></div>
+          <div class="lp-step-num">STEP 03</div>
+          <h3>Prioritize</h3>
+          <p>Each room inherits its worst active metric. A flame reading outranks a humid afternoon, so the room that matters most rises to the top of the board.</p>
+        </div>
+
+        <div class="lp-step" data-tone="respond" data-stagger>
+          <div class="lp-step-node"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
+          <div class="lp-step-num">STEP 04</div>
+          <h3>Respond</h3>
+          <p>The card flashes, a toast names the room and the cause, and the alert lands in a timestamped stream you can review long after the moment has passed.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- Sensors ---------- -->
+  <section class="lp-section" id="sensors">
+    <div class="lp-wrap">
+      <div class="lp-head" data-head>
+        <span class="lp-eyebrow">Sensor coverage</span>
+        <h2>Seven ways a room can tell you something is wrong.</h2>
+        <p class="lp-lede">Each laboratory carries the same instrument set, so a reading from the Server Room means exactly what it means in the IoT Lab.</p>
+      </div>
+
+      <div class="lp-matrix">
+        <article class="lp-sensor" style="--tone:#E63329" data-stagger>
+          <div class="lp-sensor-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg></div>
+          <h3>Flame</h3><div class="part">IR flame detector · ADC</div>
+          <p>Reads inverted — the value falls as fire approaches. Crossing the low threshold is an instant critical, no averaging, no delay.</p>
+        </article>
+
+        <article class="lp-sensor" style="--tone:#2196F3" data-stagger>
+          <div class="lp-sensor-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg></div>
+          <h3>MQ-2 · Combustible gas</h3><div class="part">LPG · Propane · Smoke</div>
+          <p>The first thing to move during a solvent spill or a gas leak, usually well before anything is visible in the room.</p>
+        </article>
+
+        <article class="lp-sensor" style="--tone:#1B3A6E" data-stagger>
+          <div class="lp-sensor-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+          <h3>MQ-7 · Carbon monoxide</h3><div class="part">CO · Odourless</div>
+          <p>Watches for the hazard nobody in the room can detect unaided. Sustained elevation escalates on its own schedule.</p>
+        </article>
+
+        <article class="lp-sensor" style="--tone:#2E9F4E" data-stagger>
+          <div class="lp-sensor-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></svg></div>
+          <h3>MQ-135 · Air quality</h3><div class="part">VOC · NH₃ · Benzene</div>
+          <p>The slow-moving one. Its trend line is usually the earliest sign that ventilation has quietly stopped doing its job.</p>
+        </article>
+
+        <article class="lp-sensor" style="--tone:#F59E0B" data-stagger>
+          <div class="lp-sensor-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 1 1 4 0z"/></svg></div>
+          <h3>Temperature &amp; humidity</h3><div class="part">DHT · °C / %RH</div>
+          <p>Server rooms fail hot and equipment fails damp. Both are banded separately so a warm day never masks a cooling fault.</p>
+        </article>
+
+        <article class="lp-sensor" style="--tone:#29A0DC" data-stagger>
+          <div class="lp-sensor-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.7s5.5 6 5.5 10.3a5.5 5.5 0 0 1-11 0C6.5 8.7 12 2.7 12 2.7z"/><path d="M3 20.5c1.5 0 1.5-1 3-1s1.5 1 3 1 1.5-1 3-1 1.5 1 3 1 1.5-1 3-1 1.5 1 3 1"/></svg></div>
+          <h3>Water level</h3><div class="part">Analog probe · % + raw</div>
+          <p>Reported as both a percentage and the raw ADC count, so a drifting probe is easy to tell apart from a real flood.</p>
+        </article>
+
+        <article class="lp-sensor" style="--tone:#24508F" data-stagger>
+          <div class="lp-sensor-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg></div>
+          <h3>Motion · PIR</h3><div class="part">Occupancy</div>
+          <p>Answers the question that changes everything during an incident: is anyone still in that room right now?</p>
+        </article>
+
+        <article class="lp-sensor" style="--tone:#3465AB" data-stagger>
+          <div class="lp-sensor-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg></div>
+          <h3>Node health</h3><div class="part">RSSI · WiFi · Relay · Uptime</div>
+          <p>A silent sensor is its own kind of alarm. Link quality and packet delay are tracked as first-class signals, not footnotes.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- Escalation ---------- -->
+  <section class="lp-section lp-ladder-section" id="escalation">
+    <div class="lp-wrap">
+      <div class="lp-head" data-head>
+        <span class="lp-eyebrow on-dark">Escalation policy</span>
+        <h2 style="color:#fff">Three states. No ambiguity about which one you're in.</h2>
+        <p class="lp-lede on-dark">A room holds exactly one state at a time — the worst one any of its sensors is currently reporting. Every threshold below is editable from the dashboard while the grid is live.</p>
+      </div>
+
+      <div class="lp-ladder">
+        <div class="lp-rung ok" data-stagger>
+          <span class="lp-rung-tag">Normal</span>
+          <h3>Everything inside band</h3>
+          <p>The room reports, the card sits quiet, the history keeps filling. Nothing asks for your attention.</p>
+          <dl>
+            <div><dt>Temperature</dt><dd>20 – 35 °C</dd></div>
+            <div><dt>Humidity</dt><dd>30 – 70 %</dd></div>
+            <div><dt>Water level</dt><dd>&lt; 50 %</dd></div>
+            <div><dt>Gas (MQ series)</dt><dd>below warn</dd></div>
+          </dl>
+        </div>
+
+        <div class="lp-rung warn" data-stagger>
+          <span class="lp-rung-tag">Warning</span>
+          <h3>Drifting out of band</h3>
+          <p>The card takes an amber edge and the alert enters the stream. Worth a look, not worth an evacuation.</p>
+          <dl>
+            <div><dt>Temperature</dt><dd>35 – 45 °C</dd></div>
+            <div><dt>Humidity</dt><dd>70 – 85 %</dd></div>
+            <div><dt>Water level</dt><dd>&gt; 50 %</dd></div>
+            <div><dt>MQ-2 / MQ-135</dt><dd>&gt; 1500 ADC</dd></div>
+          </dl>
+        </div>
+
+        <div class="lp-rung crit" data-stagger>
+          <span class="lp-rung-tag">Critical</span>
+          <h3>Act now</h3>
+          <p>The card pulses red, a toast fires immediately with the room name and the cause, and the badge count climbs in the sidebar.</p>
+          <dl>
+            <div><dt>Temperature</dt><dd>&gt; 45 °C</dd></div>
+            <div><dt>Humidity</dt><dd>&gt; 85 %</dd></div>
+            <div><dt>Water level</dt><dd>&gt; 80 %</dd></div>
+            <div><dt>Flame</dt><dd>&lt; 1000 ADC</dd></div>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- Architecture ---------- -->
+  <section class="lp-section" id="pipeline">
+    <div class="lp-wrap">
+      <div class="lp-head" data-head>
+        <span class="lp-eyebrow">Architecture</span>
+        <h2>Edge to browser, with nothing in between to break.</h2>
+        <p class="lp-lede">No server to keep alive, no database to migrate. The dashboard speaks MQTT over WebSockets directly to the broker.</p>
+      </div>
+
+      <div class="lp-pipeline">
+        <div class="lp-pipe" data-stagger>
+          <div class="pc-label">01 · Edge</div>
+          <h3>ESP32 node</h3>
+          <p>Samples every attached sensor on a fixed interval, bundles all rooms into one packet, and stamps it with node ID, RSSI, relay and WiFi state.</p>
+          <code>ESP32-01</code>
+        </div>
+        <div class="lp-arrow" data-stagger><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg></div>
+        <div class="lp-pipe" data-stagger>
+          <div class="pc-label">02 · Transport</div>
+          <h3>MQTT broker</h3>
+          <p>A single topic carries the whole campus. Broker host, port, TLS, credentials and topic are all editable from the dashboard settings.</p>
+          <code>koba-samsu</code>
+        </div>
+        <div class="lp-arrow" data-stagger><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg></div>
+        <div class="lp-pipe" data-stagger>
+          <div class="pc-label">03 · Command</div>
+          <h3>SCS-RG dashboard</h3>
+          <p>Parses, scores and renders. Room cards build themselves from the payload, so adding a Chemistry Lab tomorrow needs no code change at all.</p>
+          <code>Live board</code>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- CTA ---------- -->
+  <section class="lp-section lp-cta">
+    <div class="lp-wrap lp-cta-inner">
+      <div data-head>
+        <span class="lp-eyebrow on-dark">Command centre</span>
+        <h2>Safer campus.<br>Smarter response.</h2>
+        <p class="lp-lede on-dark">Open the live grid — room cards, trend charts, device health and the raw broker feed.</p>
+      </div>
+      <div data-head>
+        <button class="lp-btn lp-btn-primary" data-go-gate style="padding:16px 28px;font-size:15px">
+          Live dashboard
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <footer class="lp-footer">
+    <div class="lp-wrap lp-footer-inner">
+      <div>
+        <div class="tag">Sense · Analyze · Prioritize · Respond</div>
+        <div style="margin-top:8px">SCS-RG — Smart Campus Safety &amp; Response Grid</div>
+        <div style="margin-top:3px;color:#5A6E8E">University of Frontier Technology, Bangladesh</div>
+      </div>
+      <div class="lp-footer-links">
+        <a href="#chain">How it works</a>
+        <a href="#sensors">Sensors</a>
+        <a href="#escalation">Escalation</a>
+        <a href="#" data-go-gate>Live dashboard</a>
+      </div>
+    </div>
+  </footer>
+
+</div>
+</div>
+
+<!-- ============================================================
+     SCREEN 2 · PASSWORD GATE
+     ============================================================ -->
+<div id="screen-gate">
+  <div class="gate-bg"></div>
+  <div class="gate-card" id="gateCard">
+    <div class="gate-lock">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </svg>
+    </div>
+
+    <div class="gate-eyebrow">Restricted · Command centre</div>
+    <h2>Enter the access key</h2>
+    <p class="gate-sub">The live grid is password protected. Enter the key issued by the grid administrator to continue.</p>
+
+    <label for="gatePass">Access key</label>
+    <div class="gate-input-wrap">
+      <input type="password" id="gatePass" placeholder="••••••••••••••••" autocomplete="off" spellcheck="false" />
+      <button class="gate-eye" id="gateEye" type="button" aria-label="Show access key">
+        <svg id="eyeOpen" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        <svg id="eyeShut" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+      </button>
+    </div>
+
+    <div class="gate-err" id="gateErr">Incorrect access key. Try again.</div>
+
+    <button class="gate-btn" id="gateBtn">
+      Unlock dashboard
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+    </button>
+
+    <div class="gate-meta">
+      <div><span>Broker</span><span>broker.hivemq.com</span></div>
+      <div><span>Topic</span><span>koba-samsu</span></div>
+      <div><span>Transport</span><span>MQTT / WSS</span></div>
+    </div>
+
+    <a href="#" class="gate-back" id="gateBack">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H6M11 18l-6-6 6-6"/></svg>
+      Back to landing page
+    </a>
+  </div>
+</div>
+
+<!-- ============================================================
+     SCREEN 3 · LIVE DASHBOARD
+     ============================================================ -->
+<div id="screen-dash">
+<div class="app">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-name">SCS&#8209;RG</div>
+        <div class="brand-sub">Response Grid</div>
+      </div>
+    </div>
+
+    <nav class="nav" id="nav">
+      <div class="nav-section">Command Center</div>
+      <button class="nav-item active" data-view="dashboard">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+        Dashboard
+      </button>
+      <button class="nav-item" data-view="live">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+        Live Monitoring
+      </button>
+      <button class="nav-item" data-view="rooms">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg>
+        Rooms <span class="badge dim" id="nav-rooms-count">0</span>
+      </button>
+      <button class="nav-item" data-view="alerts">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        Alerts <span class="badge" id="nav-alerts-badge" style="display:none">0</span>
+      </button>
+      <button class="nav-item" data-view="charts">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 4 3 5-6"/></svg>
+        Charts
+      </button>
+
+      <div class="nav-section">Diagnostics</div>
+      <button class="nav-item" data-view="device">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg>
+        Device Health
+      </button>
+      <button class="nav-item" data-view="system">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        System Health
+      </button>
+      <button class="nav-item" data-view="mqtt">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12a10 10 0 0 1 10-10"/><path d="M2 20a2 2 0 0 1 2-2"/><path d="M2 16a6 6 0 0 1 6-6"/><path d="M2 12a10 10 0 0 1 10 10"/></svg>
+        MQTT Monitor
+      </button>
+      <button class="nav-item" data-view="settings">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <span>University of Frontier Tech</span>
+      <span class="version">v1.0.0</span>
+    </div>
+  </aside>
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+  <!-- ============ TOPBAR ============ -->
+  <header class="topbar">
+    <button class="icon-btn" id="menuToggle" aria-label="Menu" style="display:none">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <div class="topbar-title">
+      <span class="crumb">SCS-RG</span><span id="crumb-view">Dashboard</span>
+    </div>
+    <div class="topbar-spacer"></div>
+
+    <div class="topbar-chip mono" id="chip-time">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      <span id="chip-time-val">--:--:--</span>
+    </div>
+
+    <div class="topbar-chip" id="chip-mqtt">
+      <span class="dot"></span>
+      <span><span class="label-full">MQTT: </span><span id="chip-mqtt-val">Connecting</span></span>
+    </div>
+
+    <div class="topbar-chip" id="chip-esp">
+      <span class="dot"></span>
+      <span><span class="label-full">ESP32: </span><span id="chip-esp-val">Awaiting</span></span>
+    </div>
+
+    <button class="icon-btn" id="notifBtn" aria-label="Notifications">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      <span class="notif-dot hidden" id="notifDot"></span>
+    </button>
+
+    <button class="icon-btn" id="themeBtn" aria-label="Toggle theme">
+      <svg id="themeIconSun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      <svg id="themeIconMoon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </header>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+    <!-- ---------- Dashboard ---------- -->
+    <section class="view active" data-view="dashboard">
+      <div class="view-header">
+        <div>
+          <h1 class="view-title">Command overview</h1>
+          <p class="view-sub">Live safety telemetry across all campus laboratories.</p>
+        </div>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat">
+          <div class="stat-icon navy">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/></svg>
+          </div>
+          <div class="stat-body">
+            <div class="stat-label">Rooms Monitored</div>
+            <div class="stat-value" id="s-total">0</div>
+            <div class="stat-meta"><span id="s-online">0</span> online · <span id="s-offline">0</span> offline</div>
+          </div>
+        </div>
+        <div class="stat">
+          <div class="stat-icon red">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </div>
+          <div class="stat-body">
+            <div class="stat-label">Active Alerts</div>
+            <div class="stat-value" id="s-alerts">0</div>
+            <div class="stat-meta"><span id="s-crit">0</span> critical · <span id="s-warn">0</span> warnings</div>
+          </div>
+        </div>
+        <div class="stat">
+          <div class="stat-icon green">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+          </div>
+          <div class="stat-body">
+            <div class="stat-label">Signal · RSSI</div>
+            <div class="stat-value" id="s-rssi">—<span class="unit">dBm</span></div>
+            <div class="stat-meta" id="s-rssi-q">No signal</div>
+          </div>
+        </div>
+        <div class="stat">
+          <div class="stat-icon cyan">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <div class="stat-body">
+            <div class="stat-label">Last Packet</div>
+            <div class="stat-value" id="s-last">—</div>
+            <div class="stat-meta" id="s-node">Node: —</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-header">
+            <h2 class="panel-title"><span class="accent-bar"></span>Environmental trend</h2>
+            <span class="panel-sub" id="trend-info">Rolling · 60 samples</span>
+          </div>
+          <div class="chart-wrap tall">
+            <canvas id="chart-env"></canvas>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">
+            <h2 class="panel-title"><span class="accent-bar"></span>Live alerts</h2>
+            <span class="panel-sub" id="alerts-count-panel">0 active</span>
+          </div>
+          <div class="alerts-feed" id="dash-alerts">
+            <div class="alert-empty">All systems nominal.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title"><span class="accent-bar"></span>Laboratories</h2>
+          <span class="panel-sub" id="rooms-updated">Awaiting data</span>
+        </div>
+        <div class="grid-auto" id="dash-rooms">
+          <div class="room-card" style="pointer-events:none;">
+            <div class="skeleton" style="height:20px;width:60%"></div>
+            <div class="skeleton" style="height:56px"></div>
+            <div class="skeleton" style="height:12px;width:80%"></div>
+          </div>
+          <div class="room-card" style="pointer-events:none;">
+            <div class="skeleton" style="height:20px;width:60%"></div>
+            <div class="skeleton" style="height:56px"></div>
+            <div class="skeleton" style="height:12px;width:80%"></div>
+          </div>
+          <div class="room-card" style="pointer-events:none;">
+            <div class="skeleton" style="height:20px;width:60%"></div>
+            <div class="skeleton" style="height:56px"></div>
+            <div class="skeleton" style="height:12px;width:80%"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- Live Monitoring ---------- -->
+    <section class="view" data-view="live">
+      <div class="view-header">
+        <div>
+          <h1 class="view-title">Live monitoring</h1>
+          <p class="view-sub">Real-time environmental readouts across every active node.</p>
+        </div>
+      </div>
+      <div class="grid-3" id="live-tiles"></div>
+    </section>
+
+    <!-- ---------- Rooms ---------- -->
+    <section class="view" data-view="rooms">
+      <div class="view-header">
+        <div>
+          <h1 class="view-title">Rooms</h1>
+          <p class="view-sub">Click any laboratory for a full sensor breakdown.</p>
+        </div>
+      </div>
+      <div class="grid-auto" id="rooms-grid"></div>
+    </section>
+
+    <!-- ---------- Alerts ---------- -->
+    <section class="view" data-view="alerts">
+      <div class="view-header">
+        <div>
+          <h1 class="view-title">Alerts</h1>
+          <p class="view-sub">Everything the response grid has flagged, most recent first.</p>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title"><span class="accent-bar"></span>Alert stream</h2>
+          <span class="panel-sub" id="alerts-total">0 total</span>
+        </div>
+        <div class="alerts-feed" id="all-alerts" style="max-height: none;"></div>
+      </div>
+    </section>
+
+    <!-- ---------- Charts ---------- -->
+    <section class="view" data-view="charts">
+      <div class="view-header">
+        <div>
+          <h1 class="view-title">Trend charts</h1>
+          <p class="view-sub">Rolling history across every monitored variable.</p>
+        </div>
+      </div>
+      <div class="grid-3" style="margin-bottom:14px;">
+        <div class="panel"><div class="panel-header"><h2 class="panel-title"><span class="accent-bar"></span>Temperature</h2><span class="panel-sub">°C</span></div><div class="chart-wrap"><canvas id="chart-temp"></canvas></div></div>
+        <div class="panel"><div class="panel-header"><h2 class="panel-title"><span class="accent-bar"></span>Humidity</h2><span class="panel-sub">%RH</span></div><div class="chart-wrap"><canvas id="chart-hum"></canvas></div></div>
+        <div class="panel"><div class="panel-header"><h2 class="panel-title"><span class="accent-bar"></span>MQ-2 · Combustible</h2><span class="panel-sub">ADC</span></div><div class="chart-wrap"><canvas id="chart-mq2"></canvas></div></div>
+      </div>
+      <div class="grid-3" style="margin-bottom:14px;">
+        <div class="panel"><div class="panel-header"><h2 class="panel-title"><span class="accent-bar"></span>MQ-7 · CO</h2><span class="panel-sub">ADC</span></div><div class="chart-wrap"><canvas id="chart-mq7"></canvas></div></div>
+        <div class="panel"><div class="panel-header"><h2 class="panel-title"><span class="accent-bar"></span>MQ-135 · Air quality</h2><span class="panel-sub">ADC</span></div><div class="chart-wrap"><canvas id="chart-mq135"></canvas></div></div>
+        <div class="panel"><div class="panel-header"><h2 class="panel-title"><span class="accent-bar"></span>Water level</h2><span class="panel-sub">%</span></div><div class="chart-wrap"><canvas id="chart-water"></canvas></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><h2 class="panel-title"><span class="accent-bar"></span>RSSI · Signal strength</h2><span class="panel-sub">dBm</span></div>
+        <div class="chart-wrap"><canvas id="chart-rssi"></canvas></div>
+      </div>
+    </section>
+
+    <!-- ---------- Device Health ---------- -->
+    <section class="view" data-view="device">
+      <div class="view-header">
+        <div>
+          <h1 class="view-title">Device health</h1>
+          <p class="view-sub">Per-node telemetry from the SCS-RG edge controller.</p>
+        </div>
+      </div>
+      <div class="sensor-grid" id="device-grid"></div>
+    </section>
+
+    <!-- ---------- System Health ---------- -->
+    <section class="view" data-view="system">
+      <div class="view-header">
+        <div>
+          <h1 class="view-title">System health</h1>
+          <p class="view-sub">Connection quality, link state, and packet timing.</p>
+        </div>
+      </div>
+      <div class="stat-grid" id="system-grid"></div>
+      <div class="panel" style="margin-top:6px">
+        <div class="panel-header"><h2 class="panel-title"><span class="accent-bar"></span>Connection log</h2><span class="panel-sub" id="conn-log-count">0 events</span></div>
+        <div class="mqtt-log" id="conn-log"></div>
+      </div>
+    </section>
+
+    <!-- ---------- MQTT Monitor ---------- -->
+    <section class="view" data-view="mqtt">
+      <div class="view-header">
+        <div>
+          <h1 class="view-title">MQTT monitor</h1>
+          <p class="view-sub">Raw broker traffic, developer view.</p>
+        </div>
+        <div class="row">
+          <span class="topbar-chip mono">Packets: <span id="pkt-count">0</span></span>
+          <button class="topbar-chip" id="clearLogBtn" style="cursor:pointer">Clear log</button>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-header"><h2 class="panel-title"><span class="accent-bar"></span>Broker traffic</h2><span class="panel-sub" id="broker-target">broker.hivemq.com</span></div>
+          <div class="mqtt-log" id="mqtt-log"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><h2 class="panel-title"><span class="accent-bar"></span>Last parsed payload</h2><span class="panel-sub">JSON</span></div>
+          <div class="json-viewer" id="last-json">// waiting for packet…</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- Settings ---------- -->
+    <section class="view" data-view="settings">
+      <div class="view-header">
+        <div>
+          <h1 class="view-title">Settings</h1>
+          <p class="view-sub">Thresholds and broker configuration. Changes apply immediately.</p>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-header"><h2 class="panel-title"><span class="accent-bar"></span>Alert thresholds</h2></div>
+          <div id="settings-thresholds"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><h2 class="panel-title"><span class="accent-bar"></span>Broker</h2></div>
+          <div id="settings-broker"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="toast-host" id="toastHost"></div>
+
+<div class="modal-backdrop" id="roomModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <h2 class="modal-title" id="modal-title">Room</h2>
+        <span class="subtitle" id="modal-subtitle">—</span>
+      </div>
+      <button class="icon-btn" id="modalClose" aria-label="Close">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="sensor-grid" id="modal-sensors"></div>
+      <div class="panel" style="margin-top:16px;background:var(--bg-sunken);border:none">
+        <div class="panel-header">
+          <h2 class="panel-title" style="font-size:12px"><span class="accent-bar"></span>Device context</h2>
+        </div>
+        <div class="sensor-grid" id="modal-context"></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+
+/* ==============================================================
+   SCS-RG · Application core
+   Architecture: Store → Renderer → Alert engine → MQTT transport
+   ============================================================== */
+(() => {
+  'use strict';
+
+  // ---------------- Configuration ----------------
+  const DEFAULT_CONN = {
+    host: 'broker.hivemq.com',
+    port: 8884,
+    path: '/mqtt',
+    ssl: true,
+    clientId: 'scsrg-' + Math.random().toString(16).slice(2, 10),
+    username: '',
+    password: '',
+    topic: 'koba-samsu',
+    keepalive: 30,
+    reconnectPeriod: 4000,
+    connectTimeout: 8000,
+  };
+  function loadConn() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('scsrg-conn') || '{}');
+      return { ...DEFAULT_CONN, ...saved, clientId: DEFAULT_CONN.clientId };
+    } catch (e) { return { ...DEFAULT_CONN }; }
+  }
+  function saveConn(c) {
+    const { clientId, ...persist } = c;
+    localStorage.setItem('scsrg-conn', JSON.stringify(persist));
+  }
+  const CONFIG = {
+    conn: loadConn(),
+    historySize: 60,
+    thresholds: {
+      temp: { warn: 35, crit: 45, unit: '°C' },
+      hum:  { warn: 70, crit: 85, unit: '%' },
+      water:{ warn: 50, crit: 80, unit: '%' },
+      mq2:  { warn: 1500, crit: 2500, unit: 'ADC' },
+      mq7:  { warn: 1800, crit: 3000, unit: 'ADC' },
+      mq135:{ warn: 1500, crit: 2500, unit: 'ADC' },
+      flame:{ warnBelow: 2000, critBelow: 1000, unit: 'ADC' },
+    }
+  };
+
+  // ---------------- State store ----------------
+  const State = {
+    rooms: new Map(),         // room_id -> latest room object
+    device: null,             // latest device envelope
+    lastPacketTs: 0,
+    packetCount: 0,
+    alerts: [],               // {id, ts, level, room, msg}
+    seenAlertKeys: new Set(),
+    history: {                // rolling arrays per metric per room
+      temp: {}, hum: {}, mq2: {}, mq7: {}, mq135: {}, water: {}, rssi: []
+    },
+    mqttStatus: 'disconnected',
+    currentView: 'dashboard',
+    charts: {},
+    theme: localStorage.getItem('scsrg-theme') || 'light',
+  };
+
+  // ---------------- DOM helpers ----------------
+  const $  = (s, r=document) => r.querySelector(s);
+  const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+  const el = (tag, opts={}) => {
+    const n = document.createElement(tag);
+    if (opts.cls) n.className = opts.cls;
+    if (opts.html !== undefined) n.innerHTML = opts.html;
+    if (opts.text !== undefined) n.textContent = opts.text;
+    if (opts.attrs) for (const k in opts.attrs) n.setAttribute(k, opts.attrs[k]);
+    return n;
+  };
+  const fmt = (v, d=1) => (v === null || v === undefined || Number.isNaN(v)) ? '—' : Number(v).toFixed(d);
+  const fmtInt = v => (v === null || v === undefined || Number.isNaN(v)) ? '—' : Math.round(Number(v)).toString();
+  const nowHMS = (d = new Date()) => d.toTimeString().slice(0, 8);
+  const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+  // ---------------- Theme ----------------
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    $('#themeIconSun').classList.toggle('hidden', t === 'dark');
+    $('#themeIconMoon').classList.toggle('hidden', t !== 'dark');
+    State.theme = t;
+    localStorage.setItem('scsrg-theme', t);
+    // Refresh chart theme
+    Object.values(State.charts).forEach(c => c && c.update && c.update('none'));
+  }
+  $('#themeBtn').addEventListener('click', () => applyTheme(State.theme === 'dark' ? 'light' : 'dark'));
+  applyTheme(State.theme);
+
+  // ---------------- Navigation ----------------
+  const VIEW_TITLES = {
+    dashboard: 'Dashboard',
+    live: 'Live Monitoring',
+    rooms: 'Rooms',
+    alerts: 'Alerts',
+    charts: 'Charts',
+    device: 'Device Health',
+    system: 'System Health',
+    mqtt: 'MQTT Monitor',
+    settings: 'Settings',
+  };
+  function switchView(name) {
+    State.currentView = name;
+    $$('.view').forEach(v => v.classList.toggle('active', v.dataset.view === name));
+    $$('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === name));
+    $('#crumb-view').textContent = VIEW_TITLES[name] || name;
+    // Kick charts to redraw (they may have been hidden)
+    setTimeout(() => Object.values(State.charts).forEach(c => c && c.resize && c.resize()), 60);
+    if (window.matchMedia('(max-width: 900px)').matches) {
+      $('#sidebar').classList.remove('open');
+      $('#sidebarBackdrop').classList.remove('open');
+    }
+  }
+  $('#nav').addEventListener('click', e => {
+    const btn = e.target.closest('.nav-item');
+    if (btn) switchView(btn.dataset.view);
+  });
+
+  // Mobile menu
+  const mql = window.matchMedia('(max-width: 900px)');
+  function updateMobile() {
+    $('#menuToggle').style.display = mql.matches ? 'grid' : 'none';
+  }
+  mql.addEventListener('change', updateMobile);
+  updateMobile();
+  $('#menuToggle').addEventListener('click', () => {
+    $('#sidebar').classList.toggle('open');
+    $('#sidebarBackdrop').classList.toggle('open');
+  });
+  $('#sidebarBackdrop').addEventListener('click', () => {
+    $('#sidebar').classList.remove('open');
+    $('#sidebarBackdrop').classList.remove('open');
+  });
+
+  // Clock
+  function tickClock() {
+    $('#chip-time-val').textContent = nowHMS();
+  }
+  setInterval(tickClock, 1000); tickClock();
+
+  // ---------------- Toasts ----------------
+  function toast({ title, body, level='info', duration=4200 }) {
+    const t = el('div', { cls: `toast ${level}` });
+    const icons = {
+      info: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+      warn: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+      crit: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+      ok:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+    };
+    t.innerHTML = `
+      <div class="t-icon">${icons[level] || icons.info}</div>
+      <div style="flex:1;min-width:0">
+        <p class="t-title">${escapeHtml(title)}</p>
+        <p class="t-body">${escapeHtml(body || '')}</p>
+      </div>`;
+    $('#toastHost').appendChild(t);
+    setTimeout(() => {
+      t.classList.add('leaving');
+      setTimeout(() => t.remove(), 260);
+    }, duration);
+  }
+
+  // ---------------- Alert engine ----------------
+  const T = CONFIG.thresholds;
+  function classify(value, spec) {
+    if (value === null || value === undefined || Number.isNaN(value)) return 'ok';
+    if (spec.critBelow !== undefined) {
+      if (value <= spec.critBelow) return 'crit';
+      if (value <= spec.warnBelow) return 'warn';
+      return 'ok';
+    }
+    if (value >= spec.crit) return 'crit';
+    if (value >= spec.warn) return 'warn';
+    return 'ok';
+  }
+  function classifyRoom(r) {
+    const results = {
+      temp: classify(r.temp, T.temp),
+      hum:  classify(r.hum, T.hum),
+      water:classify(r.water_pct, T.water),
+      mq2:  classify(r.mq2, T.mq2),
+      mq7:  classify(r.mq7, T.mq7),
+      mq135:classify(r.mq135, T.mq135),
+      flame:classify(r.flame, T.flame),
+    };
+    let worst = 'ok';
+    for (const k in results) {
+      if (results[k] === 'crit') { worst = 'crit'; break; }
+      if (results[k] === 'warn') worst = 'warn';
+    }
+    return { perMetric: results, worst };
+  }
+  function pushAlert(room, metric, level, detail) {
+    const key = `${room.room_id}:${metric}:${level}`;
+    // only emit toast the first time we see this combination in a rolling window
+    const isNew = !State.seenAlertKeys.has(key);
+    State.seenAlertKeys.add(key);
+    const entry = {
+      id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+      ts: Date.now(),
+      level, metric, detail,
+      room: room.room_name,
+      room_id: room.room_id,
+    };
+    State.alerts.unshift(entry);
+    if (State.alerts.length > 200) State.alerts.length = 200;
+    if (isNew && level !== 'ok') {
+      toast({
+        title: `${level === 'crit' ? 'CRITICAL' : 'Warning'} · ${room.room_name}`,
+        body: detail,
+        level,
+        duration: level === 'crit' ? 6000 : 4200,
+      });
+    }
+  }
+  function evaluateAlerts(room) {
+    const { perMetric } = classifyRoom(room);
+    const labels = {
+      temp: `Temperature ${fmt(room.temp)} °C`,
+      hum:  `Humidity ${fmt(room.hum)} %`,
+      water:`Water level ${fmt(room.water_pct, 0)} %`,
+      mq2:  `MQ-2 (combustible) ${fmtInt(room.mq2)}`,
+      mq7:  `MQ-7 (CO) ${fmtInt(room.mq7)}`,
+      mq135:`MQ-135 (air quality) ${fmtInt(room.mq135)}`,
+      flame:`Flame sensor ${fmtInt(room.flame)} — possible fire`,
+    };
+    for (const m of Object.keys(perMetric)) {
+      if (perMetric[m] !== 'ok') pushAlert(room, m, perMetric[m], labels[m]);
+    }
+    // PIR event
+    if (room.pir) {
+      const key = `${room.room_id}:pir`;
+      // debounce PIR to log once every ~5s
+      const last = State._lastPir?.[room.room_id] || 0;
+      if (Date.now() - last > 5000) {
+        (State._lastPir = State._lastPir || {})[room.room_id] = Date.now();
+        State.alerts.unshift({
+          id: Date.now() + '-p' + Math.random().toString(36).slice(2, 6),
+          ts: Date.now(), level: 'info', metric: 'pir',
+          detail: 'Motion detected', room: room.room_name, room_id: room.room_id,
+        });
+      }
+    }
+  }
+
+  // Periodically decay the "seen alert" dedup so recurring critical events re-notify
+  setInterval(() => State.seenAlertKeys.clear(), 60_000);
+
+  // ---------------- History ring ----------------
+  function pushHistory(room) {
+    const rid = room.room_id;
+    for (const key of ['temp','hum','mq2','mq7','mq135']) {
+      if (!State.history[key][rid]) State.history[key][rid] = [];
+      const arr = State.history[key][rid];
+      arr.push({ t: Date.now(), v: room[key] });
+      if (arr.length > CONFIG.historySize) arr.shift();
+    }
+    if (!State.history.water[rid]) State.history.water[rid] = [];
+    State.history.water[rid].push({ t: Date.now(), v: room.water_pct });
+    if (State.history.water[rid].length > CONFIG.historySize) State.history.water[rid].shift();
+  }
+  function pushRssiHistory(rssi) {
+    State.history.rssi.push({ t: Date.now(), v: rssi });
+    if (State.history.rssi.length > CONFIG.historySize) State.history.rssi.shift();
+  }
+
+  // ---------------- MQTT status chips ----------------
+  function setMqttStatus(status) {
+    State.mqttStatus = status;
+    const chip = $('#chip-mqtt');
+    chip.classList.remove('ok','warn','crit','demo');
+    let label = 'Disconnected', cls = 'crit';
+    if (status === 'connected') { label = 'Connected'; cls = 'ok'; }
+    else if (status === 'reconnecting') { label = 'Reconnecting'; cls = 'warn'; }
+    else if (status === 'connecting') { label = 'Connecting'; cls = 'warn'; }
+    chip.classList.add(cls);
+    $('#chip-mqtt-val').textContent = label;
+  }
+  function setEspStatus(online) {
+    const chip = $('#chip-esp');
+    chip.classList.remove('ok','warn','crit','demo');
+    chip.classList.add(online ? 'ok' : 'crit');
+    $('#chip-esp-val').textContent = online ? 'Online' : 'Offline';
+  }
+
+  // ---------------- Renderer ----------------
+  function rssiQuality(r) {
+    if (r === null || r === undefined) return 'No signal';
+    if (r >= -55) return 'Excellent';
+    if (r >= -67) return 'Good';
+    if (r >= -75) return 'Fair';
+    if (r >= -85) return 'Weak';
+    return 'Poor';
+  }
+  function metricCls(level) { return level === 'crit' ? 'crit' : level === 'warn' ? 'warn' : ''; }
+
+  function renderRoomCard(room) {
+    const cls = classifyRoom(room);
+    const stateNum = room.state ?? (cls.worst === 'crit' ? 3 : cls.worst === 'warn' ? 1 : 0);
+    const stateCls = stateNum >= 2 ? 'state-3' : stateNum === 1 ? 'state-1' : '';
+    const pillCls = cls.worst === 'crit' ? 'crit' : cls.worst === 'warn' ? 'warn' : '';
+    const statusText = room.state_text || (cls.worst === 'crit' ? 'CRITICAL' : cls.worst === 'warn' ? 'WARNING' : 'NORMAL');
+
+    const warnings = Array.isArray(room.warnings) ? room.warnings : [];
+    const warnHtml = warnings.length
+      ? warnings.slice(0, 3).map(w => `<span class="warn-chip ${cls.worst === 'crit' ? 'crit' : ''}">${escapeHtml(w)}</span>`).join('')
+      : '';
+
+    return `
+      <div class="room-card ${stateCls}" data-room="${escapeHtml(room.room_id)}">
+        <div class="room-head">
+          <div>
+            <h3 class="room-name">${escapeHtml(room.room_name || room.room_id)}</h3>
+            <div class="room-id">${escapeHtml(room.room_id)}</div>
+          </div>
+          <span class="status-pill ${pillCls}">
+            <span class="live-dot"></span>${escapeHtml(statusText)}
+          </span>
+        </div>
+        <div class="metric-row">
+          <div class="metric"><span class="metric-label">Temp</span><span class="metric-value ${metricCls(cls.perMetric.temp)}">${fmt(room.temp)}°</span></div>
+          <div class="metric"><span class="metric-label">Humid</span><span class="metric-value ${metricCls(cls.perMetric.hum)}">${fmt(room.hum, 0)}%</span></div>
+          <div class="metric"><span class="metric-label">Water</span><span class="metric-value ${metricCls(cls.perMetric.water)}">${fmt(room.water_pct, 0)}%</span></div>
+          <div class="metric"><span class="metric-label">Motion</span><span class="metric-value">${room.pir ? 'YES' : '—'}</span></div>
+        </div>
+        <div class="metric-row">
+          <div class="metric"><span class="metric-label">MQ-2</span><span class="metric-value ${metricCls(cls.perMetric.mq2)}">${fmtInt(room.mq2)}</span></div>
+          <div class="metric"><span class="metric-label">MQ-7</span><span class="metric-value ${metricCls(cls.perMetric.mq7)}">${fmtInt(room.mq7)}</span></div>
+          <div class="metric"><span class="metric-label">MQ-135</span><span class="metric-value ${metricCls(cls.perMetric.mq135)}">${fmtInt(room.mq135)}</span></div>
+          <div class="metric"><span class="metric-label">Flame</span><span class="metric-value ${metricCls(cls.perMetric.flame)}">${fmtInt(room.flame)}</span></div>
+        </div>
+        <div class="room-foot">
+          <div class="warnings-row">${warnHtml || '<span style="color:var(--text-dim)">No warnings</span>'}</div>
+          <span>Updated ${nowHMS()}</span>
+        </div>
+      </div>`;
+  }
+
+  function renderRooms(containerId) {
+    const c = $('#' + containerId);
+    if (!c) return;
+    if (State.rooms.size === 0) return;
+    const html = Array.from(State.rooms.values()).map(renderRoomCard).join('');
+    c.innerHTML = html;
+    // Wire click for modal
+    $$('.room-card', c).forEach(card => {
+      card.addEventListener('click', () => openRoomModal(card.dataset.room));
+    });
+  }
+
+  function renderLiveTiles() {
+    const c = $('#live-tiles');
+    if (!c) return;
+    if (State.rooms.size === 0) {
+      c.innerHTML = '<div class="panel"><div class="alert-empty">Waiting for telemetry…</div></div>';
+      return;
+    }
+    c.innerHTML = Array.from(State.rooms.values()).map(r => {
+      const cls = classifyRoom(r);
+      const worst = cls.worst;
+      const badge = worst === 'crit' ? 'crit' : worst === 'warn' ? 'warn' : '';
+      return `
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title"><span class="accent-bar"></span>${escapeHtml(r.room_name)}</h2>
+          <span class="status-pill ${badge}"><span class="live-dot"></span>${escapeHtml(r.state_text || 'LIVE')}</span>
+        </div>
+        <div class="sensor-grid">
+          ${sensorCard('Temperature', fmt(r.temp), '°C', cls.perMetric.temp, r.temp, 50)}
+          ${sensorCard('Humidity', fmt(r.hum, 0), '%', cls.perMetric.hum, r.hum, 100)}
+          ${sensorCard('MQ-2', fmtInt(r.mq2), 'ADC', cls.perMetric.mq2, r.mq2, 4095)}
+          ${sensorCard('Flame', fmtInt(r.flame), 'ADC', cls.perMetric.flame, r.flame, 4095, true)}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function sensorCard(label, value, unit, level, raw, max=100, inverted=false) {
+    let pct = 0;
+    if (typeof raw === 'number' && !Number.isNaN(raw) && max > 0) {
+      pct = Math.max(0, Math.min(100, (raw / max) * 100));
+      if (inverted) pct = 100 - pct;
+    }
+    return `
+      <div class="sensor-card ${level === 'ok' ? '' : level}">
+        <div class="sensor-head">${escapeHtml(label)}</div>
+        <div class="sensor-value">${value}<span class="unit">${escapeHtml(unit)}</span></div>
+        <div class="sensor-bar"><div class="sensor-bar-fill" style="width:${pct}%"></div></div>
+        <div class="sensor-status">${level === 'crit' ? 'Critical' : level === 'warn' ? 'Warning' : 'Nominal'}</div>
+      </div>`;
+  }
+
+  function renderStatCards() {
+    const rooms = Array.from(State.rooms.values());
+    const total = rooms.length;
+    const online = State.device?.wifi_state === 'CONNECTED' ? total : 0;
+    const offline = Math.max(0, total - online);
+
+    // Aggregate alert counts (unique per room+level)
+    let crit = 0, warn = 0;
+    for (const r of rooms) {
+      const c = classifyRoom(r).worst;
+      if (c === 'crit') crit++;
+      else if (c === 'warn') warn++;
+    }
+
+    $('#s-total').textContent = total;
+    $('#s-online').textContent = online;
+    $('#s-offline').textContent = offline;
+    $('#s-alerts').textContent = crit + warn;
+    $('#s-crit').textContent = crit;
+    $('#s-warn').textContent = warn;
+
+    const rssi = State.device?.rssi;
+    $('#s-rssi').innerHTML = rssi !== undefined && rssi !== null
+      ? `${rssi}<span class="unit">dBm</span>`
+      : '—<span class="unit">dBm</span>';
+    $('#s-rssi-q').textContent = rssiQuality(rssi);
+
+    $('#s-last').textContent = State.device?.time_sent || (State.lastPacketTs ? nowHMS(new Date(State.lastPacketTs)) : '—');
+    $('#s-node').textContent = 'Node: ' + (State.device?.node_id || '—');
+
+    $('#nav-rooms-count').textContent = total;
+    const alertsBadge = $('#nav-alerts-badge');
+    const activeAlerts = crit + warn;
+    if (activeAlerts > 0) {
+      alertsBadge.textContent = activeAlerts;
+      alertsBadge.style.display = 'inline-block';
+      $('#notifDot').classList.remove('hidden');
+    } else {
+      alertsBadge.style.display = 'none';
+      $('#notifDot').classList.add('hidden');
+    }
+
+    $('#alerts-count-panel').textContent = `${activeAlerts} active`;
+    $('#rooms-updated').textContent = State.lastPacketTs ? `Updated ${nowHMS(new Date(State.lastPacketTs))}` : 'Awaiting data';
+  }
+
+  function renderDeviceHealth() {
+    const d = State.device;
+    const g = $('#device-grid');
+    if (!d) { g.innerHTML = '<div class="panel"><div class="alert-empty">Waiting for device envelope…</div></div>'; return; }
+    const items = [
+      ['Node ID', d.node_id || '—', ''],
+      ['WiFi', d.wifi_state || '—', d.wifi_state === 'CONNECTED' ? 'ok' : 'warn'],
+      ['RSSI', (d.rssi ?? '—') + ' dBm', ''],
+      ['Sensor state', (d.sensor_state || '—').toUpperCase(), ''],
+      ['Relay', d.relay || '—', ''],
+      ['Button', d.button_state || '—', ''],
+      ['Last packet', d.time_sent || nowHMS(new Date(State.lastPacketTs)), ''],
+      ['Rooms bound', String(State.rooms.size), ''],
+    ];
+    g.innerHTML = items.map(([k, v, cls]) => `
+      <div class="sensor-card ${cls === 'warn' ? 'warn' : ''}">
+        <div class="sensor-head">${escapeHtml(k)}</div>
+        <div class="sensor-value" style="font-size:20px">${escapeHtml(String(v))}</div>
+        <div class="sensor-status">${cls === 'ok' ? 'Healthy' : cls === 'warn' ? 'Check' : 'Report'}</div>
+      </div>`).join('');
+  }
+
+  function renderSystemHealth() {
+    const g = $('#system-grid');
+    const delay = State.lastPacketTs ? Math.round((Date.now() - State.lastPacketTs) / 1000) : null;
+    const conn = State.mqttStatus === 'connected' ? 'Excellent' : State.mqttStatus === 'reconnecting' ? 'Degraded' : 'Down';
+    const items = [
+      { label: 'MQTT link', val: State.mqttStatus.toUpperCase(), cls: State.mqttStatus === 'connected' ? 'green' : 'amber' },
+      { label: 'Packet delay', val: delay === null ? '—' : delay + 's', cls: delay !== null && delay > 15 ? 'red' : 'green' },
+      { label: 'Connection', val: conn, cls: 'cyan' },
+      { label: 'RSSI', val: (State.device?.rssi ?? '—') + ' dBm', cls: 'navy' },
+    ];
+    g.innerHTML = items.map(i => `
+      <div class="stat">
+        <div class="stat-icon ${i.cls}">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        </div>
+        <div class="stat-body">
+          <div class="stat-label">${escapeHtml(i.label)}</div>
+          <div class="stat-value" style="font-size:20px">${escapeHtml(String(i.val))}</div>
+        </div>
+      </div>`).join('');
+  }
+
+  // Alerts feed rendering
+  function renderAlertsFeed(target, limit=20) {
+    const el2 = $('#' + target);
+    if (!el2) return;
+    const list = State.alerts.slice(0, limit);
+    if (list.length === 0) {
+      el2.innerHTML = '<div class="alert-empty">All systems nominal.</div>';
+      return;
+    }
+    el2.innerHTML = list.map(a => `
+      <div class="alert-item ${a.level === 'crit' ? 'crit' : a.level === 'info' ? 'info' : ''}">
+        <div class="a-icon">
+          ${a.level === 'crit'
+            ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
+            : a.level === 'info'
+              ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+              : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'}
+        </div>
+        <div class="a-body">
+          <p class="a-title">${escapeHtml(a.detail)}</p>
+          <p class="a-sub">${escapeHtml(a.room)} · ${nowHMS(new Date(a.ts))}</p>
+        </div>
+      </div>`).join('');
+  }
+
+  // ---------------- Charts ----------------
+  const chartPalette = ['#2E9F4E','#1B3A6E','#F59E0B','#06B6D4','#EF4444','#8B5CF6','#4ADE80','#3465AB'];
+
+  function chartTheme() {
+    const isDark = State.theme === 'dark';
+    return {
+      grid: isDark ? '#17264A' : '#E1E7F0',
+      tick: isDark ? '#93A2BE' : '#55627A',
+      point: isDark ? '#0C1A35' : '#FFFFFF',
+    };
+  }
+
+  function makeLineChart(canvasId, opts={}) {
+    const ctx = $('#' + canvasId);
+    if (!ctx) return null;
+    const th = chartTheme();
+    const c = new Chart(ctx, {
+      type: 'line',
+      data: { labels: [], datasets: [] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 300 },
+        interaction: { intersect: false, mode: 'index' },
+        plugins: {
+          legend: {
+            display: opts.showLegend !== false,
+            position: 'bottom',
+            labels: { color: th.tick, boxWidth: 8, boxHeight: 8, usePointStyle: true, font: { size: 11, family: 'Inter' } }
+          },
+          tooltip: {
+            backgroundColor: '#0A1A38', titleColor: '#fff', bodyColor: '#E7ECF5', borderWidth: 0, padding: 10,
+            titleFont: { family: 'Inter', size: 12, weight: '600' }, bodyFont: { family: 'JetBrains Mono', size: 11 }, cornerRadius: 6,
+          }
+        },
+        scales: {
+          x: { grid: { color: th.grid, drawTicks: false }, ticks: { color: th.tick, font: { family: 'JetBrains Mono', size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 6 } },
+          y: { grid: { color: th.grid, drawTicks: false }, ticks: { color: th.tick, font: { family: 'JetBrains Mono', size: 10 } }, beginAtZero: opts.beginAtZero ?? false }
+        },
+        elements: {
+          line: { tension: 0.35, borderWidth: 2 },
+          point: { radius: 0, hoverRadius: 4, backgroundColor: th.point, borderWidth: 2 }
+        }
+      }
+    });
+    return c;
+  }
+
+  function ensureCharts() {
+    if (!State.charts.env) State.charts.env = makeLineChart('chart-env', { showLegend: true });
+    if (!State.charts.temp) State.charts.temp = makeLineChart('chart-temp', { showLegend: false });
+    if (!State.charts.hum) State.charts.hum = makeLineChart('chart-hum', { showLegend: false });
+    if (!State.charts.mq2) State.charts.mq2 = makeLineChart('chart-mq2', { showLegend: false, beginAtZero: true });
+    if (!State.charts.mq7) State.charts.mq7 = makeLineChart('chart-mq7', { showLegend: false, beginAtZero: true });
+    if (!State.charts.mq135) State.charts.mq135 = makeLineChart('chart-mq135', { showLegend: false, beginAtZero: true });
+    if (!State.charts.water) State.charts.water = makeLineChart('chart-water', { showLegend: false, beginAtZero: true });
+    if (!State.charts.rssi) State.charts.rssi = makeLineChart('chart-rssi', { showLegend: false });
+  }
+
+  function updateCharts() {
+    ensureCharts();
+    const rooms = Array.from(State.rooms.values());
+    if (rooms.length === 0) return;
+
+    // Env chart on dashboard: average temp+hum across rooms
+    const first = State.history.temp[rooms[0].room_id] || [];
+    const labels = first.map(p => nowHMS(new Date(p.t)).slice(0, 5));
+
+    // Dashboard combined temp/hum lines (avg across rooms)
+    const avgTemp = [], avgHum = [];
+    for (let i = 0; i < first.length; i++) {
+      let ts = 0, hs = 0, tc = 0, hc = 0;
+      for (const r of rooms) {
+        const t = State.history.temp[r.room_id]?.[i]?.v;
+        const h = State.history.hum[r.room_id]?.[i]?.v;
+        if (typeof t === 'number') { ts += t; tc++; }
+        if (typeof h === 'number') { hs += h; hc++; }
+      }
+      avgTemp.push(tc ? ts/tc : null);
+      avgHum.push(hc ? hs/hc : null);
+    }
+    State.charts.env.data.labels = labels;
+    State.charts.env.data.datasets = [
+      { label: 'Avg Temp (°C)', data: avgTemp, borderColor: '#2E9F4E', backgroundColor: 'rgba(46,159,78,0.10)', fill: true, yAxisID: 'y' },
+      { label: 'Avg Humidity (%)', data: avgHum, borderColor: '#1B3A6E', backgroundColor: 'rgba(27,58,110,0.08)', fill: true, yAxisID: 'y' },
+    ];
+    State.charts.env.update('none');
+
+    // Per-room per-metric charts
+    const buildDatasets = (metricKey) => rooms.map((r, i) => ({
+      label: r.room_name,
+      data: (State.history[metricKey][r.room_id] || []).map(p => p.v),
+      borderColor: chartPalette[i % chartPalette.length],
+      backgroundColor: chartPalette[i % chartPalette.length] + '20',
+      fill: false,
+    }));
+
+    for (const [key, chart] of [
+      ['temp', State.charts.temp],
+      ['hum', State.charts.hum],
+      ['mq2', State.charts.mq2],
+      ['mq7', State.charts.mq7],
+      ['mq135', State.charts.mq135],
+      ['water', State.charts.water],
+    ]) {
+      if (!chart) continue;
+      chart.data.labels = labels;
+      chart.data.datasets = buildDatasets(key);
+      chart.options.plugins.legend.display = true;
+      chart.update('none');
+    }
+
+    // RSSI chart
+    const rssiArr = State.history.rssi;
+    State.charts.rssi.data.labels = rssiArr.map(p => nowHMS(new Date(p.t)).slice(0, 5));
+    State.charts.rssi.data.datasets = [{
+      label: 'RSSI (dBm)',
+      data: rssiArr.map(p => p.v),
+      borderColor: '#06B6D4', backgroundColor: 'rgba(6,182,212,0.12)', fill: true,
+    }];
+    State.charts.rssi.update('none');
+  }
+
+  // ---------------- Modal ----------------
+  function openRoomModal(roomId) {
+    const r = State.rooms.get(roomId);
+    if (!r) return;
+    const d = State.device || {};
+    const cls = classifyRoom(r);
+
+    $('#modal-title').textContent = r.room_name;
+    $('#modal-subtitle').textContent = `${r.room_id} · ${r.state_text || 'LIVE'} · updated ${nowHMS()}`;
+
+    const sensors = [
+      { label: 'Temperature', val: fmt(r.temp), unit: '°C', level: cls.perMetric.temp, raw: r.temp, max: 50 },
+      { label: 'Humidity', val: fmt(r.hum, 0), unit: '%', level: cls.perMetric.hum, raw: r.hum, max: 100 },
+      { label: 'Water level', val: fmt(r.water_pct, 0), unit: '%', level: cls.perMetric.water, raw: r.water_pct, max: 100 },
+      { label: 'MQ-2 (LPG/Smoke)', val: fmtInt(r.mq2), unit: 'ADC', level: cls.perMetric.mq2, raw: r.mq2, max: 4095 },
+      { label: 'MQ-7 (CO)', val: fmtInt(r.mq7), unit: 'ADC', level: cls.perMetric.mq7, raw: r.mq7, max: 4095 },
+      { label: 'MQ-135 (Air quality)', val: fmtInt(r.mq135), unit: 'ADC', level: cls.perMetric.mq135, raw: r.mq135, max: 4095 },
+      { label: 'Flame', val: fmtInt(r.flame), unit: 'ADC', level: cls.perMetric.flame, raw: r.flame, max: 4095, inverted: true },
+      { label: 'Motion (PIR)', val: r.pir ? 'DETECTED' : 'CLEAR', unit: '', level: r.pir ? 'warn' : 'ok', raw: r.pir ? 1 : 0, max: 1 },
+    ];
+    $('#modal-sensors').innerHTML = sensors.map(s =>
+      sensorCard(s.label, s.val, s.unit, s.level, s.raw, s.max, s.inverted)
+    ).join('');
+
+    const ctx = [
+      ['Node ID', d.node_id || '—'],
+      ['RSSI', (d.rssi ?? '—') + ' dBm · ' + rssiQuality(d.rssi)],
+      ['Relay', d.relay || '—'],
+      ['Button', d.button_state || '—'],
+      ['WiFi', d.wifi_state || '—'],
+      ['Sensor state', (d.sensor_state || '—').toUpperCase()],
+      ['Timestamp', d.time_sent || nowHMS()],
+      ['Water raw', fmtInt(r.water_raw)],
+    ];
+    $('#modal-context').innerHTML = ctx.map(([k, v]) => `
+      <div class="sensor-card">
+        <div class="sensor-head">${escapeHtml(k)}</div>
+        <div class="sensor-value" style="font-size:18px">${escapeHtml(String(v))}</div>
+      </div>`).join('');
+
+    $('#roomModal').classList.add('open');
+  }
+  $('#modalClose').addEventListener('click', () => $('#roomModal').classList.remove('open'));
+  $('#roomModal').addEventListener('click', e => { if (e.target.id === 'roomModal') $('#roomModal').classList.remove('open'); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#roomModal').classList.remove('open'); });
+
+  // ---------------- MQTT log & JSON viewer ----------------
+  function logMqtt(topic, body, kind='msg') {
+    const c = $('#mqtt-log');
+    if (!c) return;
+    const entry = el('div', { cls: 'log-entry ' + (kind === 'sys' ? 'sys' : kind === 'err' ? 'err' : '') });
+    entry.innerHTML = `<span class="log-time">${nowHMS()}</span>
+                       <span class="log-topic">${escapeHtml(topic)}</span>
+                       <span class="log-body">${escapeHtml(typeof body === 'string' ? body : JSON.stringify(body))}</span>`;
+    c.prepend(entry);
+    while (c.children.length > 100) c.removeChild(c.lastChild);
+    $('#pkt-count').textContent = State.packetCount;
+  }
+  function logConn(msg) {
+    const c = $('#conn-log'); if (!c) return;
+    const entry = el('div', { cls: 'log-entry sys' });
+    entry.innerHTML = `<span class="log-time">${nowHMS()}</span><span class="log-body">${escapeHtml(msg)}</span>`;
+    c.prepend(entry);
+    while (c.children.length > 50) c.removeChild(c.lastChild);
+    $('#conn-log-count').textContent = c.children.length + ' events';
+  }
+  function renderJson(obj) {
+    const jsonStr = JSON.stringify(obj, null, 2);
+    const highlighted = jsonStr
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"([^"\\]*(?:\\.[^"\\]*)*)"(\s*:)/g, '<span class="k">"$1"</span>$2')
+      .replace(/:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/g, ': <span class="s">"$1"</span>')
+      .replace(/:\s*(-?\d+\.?\d*)/g, ': <span class="n">$1</span>')
+      .replace(/:\s*(true|false)/g, ': <span class="b">$1</span>')
+      .replace(/:\s*null/g, ': <span class="nl">null</span>');
+    $('#last-json').innerHTML = highlighted;
+  }
+
+  $('#clearLogBtn').addEventListener('click', () => {
+    $('#mqtt-log').innerHTML = '';
+    State.packetCount = 0;
+    $('#pkt-count').textContent = '0';
+  });
+
+  // ---------------- Payload handler ----------------
+  function handlePayload(topic, raw) {
+    State.packetCount++;
+    let obj;
+    try {
+      obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch (e) {
+      logMqtt(topic, 'INVALID JSON', 'err');
+      return;
+    }
+    if (!obj || typeof obj !== 'object') { logMqtt(topic, 'Malformed', 'err'); return; }
+
+    State.lastPacketTs = Date.now();
+
+    State.device = {
+      node_id: obj.node_id, rssi: obj.rssi, relay: obj.relay,
+      button_state: obj.button_state, sensor_state: obj.sensor_state,
+      wifi_state: obj.wifi_state, time_sent: obj.time_sent,
+    };
+    if (typeof obj.rssi === 'number') pushRssiHistory(obj.rssi);
+
+    if (Array.isArray(obj.rooms)) {
+      for (const r of obj.rooms) {
+        if (!r || !r.room_id) continue;
+        // Fill missing fields defensively
+        const safe = {
+          room_id: r.room_id,
+          room_name: r.room_name || r.room_id,
+          mq2: num(r.mq2), mq7: num(r.mq7), mq135: num(r.mq135),
+          flame: num(r.flame),
+          water_pct: num(r.water_pct), water_raw: num(r.water_raw),
+          temp: num(r.temp), hum: num(r.hum),
+          pir: !!r.pir,
+          state: num(r.state, 0),
+          state_text: r.state_text || 'NORMAL',
+          warnings: Array.isArray(r.warnings) ? r.warnings : [],
+        };
+        const prev = State.rooms.get(safe.room_id);
+        State.rooms.set(safe.room_id, safe);
+        pushHistory(safe);
+        evaluateAlerts(safe);
+        void prev;
+      }
+    }
+
+    logMqtt(topic, obj);
+    renderJson(obj);
+    setEspStatus(obj.wifi_state === 'CONNECTED');
+    renderAll(true);
+  }
+  function num(v, def=null) {
+    if (v === null || v === undefined || v === '') return def;
+    const n = Number(v);
+    return Number.isNaN(n) ? def : n;
+  }
+
+  // ---------------- MQTT connect ----------------
+  let client = null;
+
+  function brokerUrl(c) {
+    const scheme = c.ssl ? 'wss' : 'ws';
+    const path = c.path && c.path.startsWith('/') ? c.path : '/' + (c.path || 'mqtt');
+    return `${scheme}://${c.host}:${c.port}${path}`;
+  }
+
+  function disconnectMqtt(reason='User disconnect') {
+    if (client) {
+      try { client.end(true); } catch (e) {}
+      client = null;
+    }
+    setMqttStatus('disconnected');
+    logConn(reason);
+  }
+
+  function connectMqtt() {
+    disconnectMqtt('Reconnecting with new configuration');
+    const c = CONFIG.conn;
+    const url = brokerUrl(c);
+    logConn(`Connecting to ${url}`);
+    setMqttStatus('connecting');
+    $('#broker-target').textContent = url;
+
+    try {
+      const opts = {
+        clientId: c.clientId,
+        keepalive: Number(c.keepalive) || 30,
+        clean: true,
+        reconnectPeriod: Number(c.reconnectPeriod) || 4000,
+        connectTimeout: Number(c.connectTimeout) || 8000,
+      };
+      if (c.username) opts.username = c.username;
+      if (c.password) opts.password = c.password;
+      client = mqtt.connect(url, opts);
+    } catch (e) {
+      logConn('mqtt.connect failed: ' + e.message);
+      setMqttStatus('disconnected');
+      toast({ title: 'Connection failed', body: e.message, level: 'crit' });
+      return;
+    }
+
+    client.on('connect', () => {
+      setMqttStatus('connected');
+      logConn('Connected · subscribing to ' + c.topic);
+      logMqtt('SYSTEM', 'Connected to broker', 'sys');
+      client.subscribe(c.topic, err => {
+        if (err) {
+          logConn('Subscribe error on ' + c.topic + ': ' + err.message);
+          toast({ title: 'Subscribe failed', body: c.topic + ' — ' + err.message, level: 'crit' });
+        } else {
+          logConn('Subscribed · ' + c.topic);
+          toast({ title: 'Connected', body: 'Subscribed to ' + c.topic, level: 'ok' });
+        }
+      });
+    });
+
+    client.on('reconnect', () => {
+      setMqttStatus('reconnecting');
+      logConn('Reconnecting…');
+    });
+
+    client.on('offline', () => {
+      setMqttStatus('disconnected');
+      logConn('Broker offline');
+    });
+
+    client.on('close', () => {
+      logConn('Connection closed');
+      if (State.mqttStatus === 'connected') setMqttStatus('disconnected');
+    });
+
+    client.on('error', (err) => {
+      logConn('Error: ' + (err.message || err));
+      setMqttStatus('disconnected');
+    });
+
+    client.on('message', (topic, payload) => {
+      handlePayload(topic, payload.toString());
+    });
+  }
+
+  // ---------------- Settings view ----------------
+  function renderSettings() {
+    const t = CONFIG.thresholds;
+    const rows = [
+      ['Temperature warning', 'temp.warn', t.temp.warn, '°C'],
+      ['Temperature critical', 'temp.crit', t.temp.crit, '°C'],
+      ['Humidity warning', 'hum.warn', t.hum.warn, '%'],
+      ['Humidity critical', 'hum.crit', t.hum.crit, '%'],
+      ['Water warning', 'water.warn', t.water.warn, '%'],
+      ['Water critical', 'water.crit', t.water.crit, '%'],
+      ['MQ-2 warning', 'mq2.warn', t.mq2.warn, 'ADC'],
+      ['MQ-2 critical', 'mq2.crit', t.mq2.crit, 'ADC'],
+      ['MQ-7 warning', 'mq7.warn', t.mq7.warn, 'ADC'],
+      ['MQ-7 critical', 'mq7.crit', t.mq7.crit, 'ADC'],
+      ['MQ-135 warning', 'mq135.warn', t.mq135.warn, 'ADC'],
+      ['MQ-135 critical', 'mq135.crit', t.mq135.crit, 'ADC'],
+      ['Flame warn (below)', 'flame.warnBelow', t.flame.warnBelow, 'ADC'],
+      ['Flame crit (below)', 'flame.critBelow', t.flame.critBelow, 'ADC'],
+    ];
+    $('#settings-thresholds').innerHTML = rows.map(([label, path, val, unit]) => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);gap:10px">
+        <div>
+          <div style="font-weight:600;font-size:13px">${label}</div>
+          <div style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono)">${path}</div>
+        </div>
+        <div class="row">
+          <input type="number" value="${val}" data-path="${path}" style="width:88px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-sunken);color:var(--text);font-family:var(--font-mono);font-size:12px;text-align:right"/>
+          <span style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);min-width:32px">${unit}</span>
+        </div>
+      </div>`).join('');
+    $$('#settings-thresholds input').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const [k, sub] = inp.dataset.path.split('.');
+        const v = Number(inp.value);
+        if (!Number.isNaN(v) && CONFIG.thresholds[k]) {
+          CONFIG.thresholds[k][sub] = v;
+          State.seenAlertKeys.clear();
+          renderAll(true);
+          toast({ title: 'Threshold updated', body: `${inp.dataset.path} = ${v}`, level: 'ok' });
+        }
+      });
+    });
+
+    renderBrokerForm();
+  }
+
+  function renderBrokerForm() {
+    const c = CONFIG.conn;
+    const connected = State.mqttStatus === 'connected';
+    const connecting = State.mqttStatus === 'connecting' || State.mqttStatus === 'reconnecting';
+    const statusLabel = connected ? 'Connected' : connecting ? 'Connecting…' : 'Disconnected';
+    const statusCls = connected ? 'ok' : connecting ? 'warn' : 'crit';
+
+    $('#settings-broker').innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding:10px 12px;background:var(--bg-sunken);border-radius:8px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="topbar-chip ${statusCls}" style="padding:4px 10px"><span class="dot"></span>${statusLabel}</span>
+          <span style="font-family:var(--font-mono);font-size:11.5px;color:var(--text-muted)">${escapeHtml(brokerUrl(c))}</span>
+        </div>
+      </div>
+      <div class="broker-form">
+        ${brokerField('Host', 'host', c.host, 'text', 'broker.hivemq.com')}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          ${brokerField('Port', 'port', c.port, 'number', '8884')}
+          ${brokerField('Path', 'path', c.path, 'text', '/mqtt')}
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600">
+            <input type="checkbox" data-conn="ssl" ${c.ssl ? 'checked' : ''} style="width:16px;height:16px;accent-color:var(--green-600);cursor:pointer"/>
+            SSL / TLS (WSS)
+          </label>
+          <span style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono)">wss:// when on, ws:// when off</span>
+        </div>
+        ${brokerField('Client ID', 'clientId', c.clientId, 'text', 'auto-generated')}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          ${brokerField('Username', 'username', c.username, 'text', 'optional')}
+          ${brokerField('Password', 'password', c.password, 'password', 'optional')}
+        </div>
+        ${brokerField('Topic', 'topic', c.topic, 'text', 'koba-samsu')}
+        ${brokerField('Keep alive (s)', 'keepalive', c.keepalive, 'number', '30')}
+
+        <div style="display:flex;gap:8px;margin-top:16px">
+          <button id="btnConnect" style="flex:1;padding:10px 14px;background:var(--green-600);color:#fff;border-radius:8px;font-weight:600;font-size:13px;transition:transform var(--dur-fast) var(--ease-out),background var(--dur) var(--ease-out)">${connected ? 'Reconnect' : 'Connect'}</button>
+          <button id="btnDisconnect" ${connected || connecting ? '' : 'disabled'} style="flex:1;padding:10px 14px;background:${connected || connecting ? 'var(--red-500)' : 'var(--bg-sunken)'};color:${connected || connecting ? '#fff' : 'var(--text-dim)'};border-radius:8px;font-weight:600;font-size:13px;transition:transform var(--dur-fast) var(--ease-out)">Disconnect</button>
+          <button id="btnReset" style="padding:10px 14px;background:var(--bg-sunken);color:var(--text);border:1px solid var(--border);border-radius:8px;font-weight:600;font-size:13px">Reset</button>
+        </div>
+      </div>`;
+
+    $$('#settings-broker [data-conn]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const k = inp.dataset.conn;
+        CONFIG.conn[k] = inp.type === 'checkbox' ? inp.checked
+                       : inp.type === 'number' ? Number(inp.value)
+                       : inp.value;
+        saveConn(CONFIG.conn);
+      });
+    });
+    $('#btnConnect').addEventListener('click', () => {
+      saveConn(CONFIG.conn);
+      connectMqtt();
+    });
+    $('#btnDisconnect').addEventListener('click', () => {
+      disconnectMqtt('Disconnected by user');
+      setEspStatus(false);
+      renderBrokerForm();
+    });
+    $('#btnReset').addEventListener('click', () => {
+      const kept = CONFIG.conn.clientId;
+      CONFIG.conn = { ...DEFAULT_CONN, clientId: kept };
+      saveConn(CONFIG.conn);
+      renderBrokerForm();
+      toast({ title: 'Defaults restored', body: 'Broker settings reset. Click Connect to apply.', level: 'info' });
+    });
+  }
+
+  function brokerField(label, key, value, type='text', placeholder='') {
+    return `
+      <div style="padding:8px 0;border-bottom:1px solid var(--border)">
+        <label style="display:block;font-size:11px;color:var(--text-muted);letter-spacing:.06em;text-transform:uppercase;font-weight:600;margin-bottom:6px">${escapeHtml(label)}</label>
+        <input data-conn="${key}" type="${type}" value="${escapeHtml(String(value ?? ''))}" placeholder="${escapeHtml(placeholder)}"
+          style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-sunken);color:var(--text);font-family:var(--font-mono);font-size:12.5px"/>
+      </div>`;
+  }
+
+  // Re-render broker form when status changes so status chip stays live
+  const _origSetMqttStatus = setMqttStatus;
+  setMqttStatus = function(s) {
+    _origSetMqttStatus(s);
+    if (State.currentView === 'settings') renderBrokerForm();
+  };
+
+  // ---------------- Render orchestrator ----------------
+  let renderTimer = null;
+  function renderAll(immediate=false) {
+    if (renderTimer) return;
+    const doIt = () => {
+      renderTimer = null;
+      renderStatCards();
+      renderRooms('dash-rooms');
+      renderRooms('rooms-grid');
+      renderLiveTiles();
+      renderDeviceHealth();
+      renderSystemHealth();
+      renderAlertsFeed('dash-alerts', 8);
+      renderAlertsFeed('all-alerts', 100);
+      $('#alerts-total').textContent = State.alerts.length + ' total';
+      updateCharts();
+    };
+    if (immediate) doIt();
+    else renderTimer = setTimeout(doIt, 80);
+  }
+
+  // ---------------- Boot (called once the password gate is cleared) ----------------
+  let booted = false;
+  window.SCSRG_BOOT = function () {
+    if (booted) return;
+    booted = true;
+    renderSettings();
+    renderAll(true);
+    connectMqtt();                 // live broker, no simulated data
+  };
+
+  // Expose for debugging
+  window.SCSRG = { State, CONFIG, handlePayload };
+})();
+
+</script>
+
+<script>
+/* ==============================================================
+   SCS-RG · Landing → Gate → Dashboard router
+   ============================================================== */
+(() => {
+  'use strict';
+
+  /* ############################################################
+     #                                                          #
+     #   DASHBOARD ACCESS PASSWORD                              #
+     #   Change the value on the line below to set a new key.   #
+     #                                                          #
+     ############################################################ */
+  const DASHBOARD_PASSWORD = 'hozorolurakosabamcu569956';
+
+
+  const $  = s => document.querySelector(s);
+  const $$ = s => Array.from(document.querySelectorAll(s));
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const hasGSAP = typeof window.gsap !== 'undefined';
+
+  if (hasGSAP && window.ScrollTrigger) gsap.registerPlugin(ScrollTrigger);
+
+  /* ---------------- Screen router ---------------- */
+  function showScreen(name) {
+    document.body.classList.remove('mode-landing', 'mode-gate', 'mode-dash');
+    document.body.classList.add('mode-' + name);
+    window.scrollTo(0, 0);
+    if (hasGSAP && window.ScrollTrigger) ScrollTrigger.refresh();
+  }
+
+  function goGate(e) {
+    if (e) e.preventDefault();
+    showScreen('gate');
+    const card = $('#gateCard');
+    if (hasGSAP && !reduce) {
+      gsap.fromTo(card, { y: 22, opacity: 0, scale: .98 },
+        { y: 0, opacity: 1, scale: 1, duration: .55, ease: 'power3.out' });
+    }
+    setTimeout(() => $('#gatePass').focus(), 260);
+  }
+
+  function goLanding(e) {
+    if (e) e.preventDefault();
+    showScreen('landing');
+    $('#gatePass').value = '';
+    $('#gateErr').classList.remove('show');
+  }
+
+  function goDashboard() {
+    showScreen('dash');
+    // Boot the dashboard only now, so charts measure a visible canvas
+    if (typeof window.SCSRG_BOOT === 'function') window.SCSRG_BOOT();
+    if (hasGSAP && !reduce) {
+      gsap.fromTo('#screen-dash', { opacity: 0 }, { opacity: 1, duration: .45, ease: 'power2.out' });
+    }
+  }
+
+  $$('[data-go-gate]').forEach(b => b.addEventListener('click', goGate));
+  $('#gateBack').addEventListener('click', goLanding);
+
+  /* ---------------- Password gate ---------------- */
+  const passEl = $('#gatePass');
+  const errEl  = $('#gateErr');
+  const cardEl = $('#gateCard');
+
+  function fail(msg) {
+    errEl.textContent = msg;
+    errEl.classList.add('show');
+    cardEl.classList.remove('shake');
+    void cardEl.offsetWidth;
+    cardEl.classList.add('shake');
+    passEl.select();
+  }
+
+  function unlock() {
+    const v = passEl.value.trim();
+    if (!v) { fail('Enter the access key to continue.'); return; }
+    if (v !== DASHBOARD_PASSWORD) { fail('Incorrect access key. Try again.'); return; }
+
+    errEl.classList.remove('show');
+    const btn = $('#gateBtn');
+    btn.textContent = 'Connecting to the grid…';
+
+    setTimeout(() => {
+      goDashboard();
+      btn.innerHTML = 'Unlock dashboard <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>';
+      passEl.value = '';
+    }, 420);
+  }
+
+  $('#gateBtn').addEventListener('click', unlock);
+  passEl.addEventListener('keydown', e => { if (e.key === 'Enter') unlock(); });
+  passEl.addEventListener('input', () => errEl.classList.remove('show'));
+
+  // Show / hide the key
+  $('#gateEye').addEventListener('click', () => {
+    const shown = passEl.type === 'text';
+    passEl.type = shown ? 'password' : 'text';
+    $('#eyeOpen').style.display = shown ? 'block' : 'none';
+    $('#eyeShut').style.display = shown ? 'none' : 'block';
+    passEl.focus();
+  });
+
+  /* ---------------- Landing nav ---------------- */
+  const nav = $('#lpNav');
+  const onScroll = () => nav.classList.toggle('scrolled', window.scrollY > 24);
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  $$('#lp a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      const id = a.getAttribute('href');
+      if (id.length < 2) return;
+      const t = document.querySelector(id);
+      if (!t) return;
+      e.preventDefault();
+      const y = t.getBoundingClientRect().top + window.scrollY - 70;
+      window.scrollTo({ top: y, behavior: reduce ? 'auto' : 'smooth' });
+    });
+  });
+
+  /* ---------------- Hero schematic: idle telemetry + incidents ---------------- */
+  const nodes = [
+    { el: $('#node-a'), link: $('#link-a'), name: 'IoT Lab',
+      idle: () => (30.5 + (Math.random() * 1.6 - .8)).toFixed(1) + '°C',
+      alarm: 'MQ2 2841', cause: 'MQ-2 combustible gas above critical' },
+    { el: $('#node-b'), link: $('#link-b'), name: 'Robotics Lab',
+      idle: () => 'MQ2 ' + Math.round(84 + Math.random() * 14),
+      alarm: 'FLAME 412', cause: 'Flame detected — ADC below critical' },
+    { el: $('#node-c'), link: $('#link-c'), name: 'Server Room',
+      idle: () => Math.round(9 + Math.random() * 5) + '% H₂O',
+      alarm: '86% H₂O', cause: 'Water level above critical threshold' },
+  ];
+  const roBox = $('#roBox'), roTitle = $('#roTitle'), roSub = $('#roSub');
+
+  if (!reduce) {
+    setInterval(() => {
+      if (!document.body.classList.contains('mode-landing')) return;
+      nodes.forEach(n => {
+        if (n.el.classList.contains('alarm')) return;
+        const v = n.el.querySelector('[data-val]');
+        if (v) v.textContent = n.idle();
+      });
+    }, 2200);
+
+    let cycle = 0;
+    const runIncident = () => {
+      if (!document.body.classList.contains('mode-landing')) return;
+      const n = nodes[cycle++ % nodes.length];
+      const v = n.el.querySelector('[data-val]');
+      const restore = v ? v.textContent : '';
+
+      n.el.classList.add('alarm');
+      n.link.classList.add('hot');
+      if (v) v.textContent = n.alarm;
+      roBox.classList.add('alarm');
+      roTitle.textContent = n.name + ' · CRITICAL';
+      roSub.textContent = n.cause;
+
+      setTimeout(() => {
+        n.el.classList.remove('alarm');
+        n.link.classList.remove('hot');
+        if (v) v.textContent = restore;
+        roBox.classList.remove('alarm');
+        roTitle.textContent = 'All rooms nominal';
+        roSub.textContent = 'koba-samsu · 3 nodes reporting';
+      }, 4200);
+    };
+    setTimeout(() => { runIncident(); setInterval(runIncident, 11000); }, 4200);
+  }
+
+  /* ---------------- Spec counters ----------------
+     Seed every counter with its final value first, so the strip reads
+     correctly even if GSAP fails to load or motion is reduced.
+     GSAP then re-animates them from zero when they scroll into view. */
+  $$('[data-count]').forEach(c => { c.textContent = c.dataset.count; });
+
+  /* ---------------- GSAP: hero entrance + scroll choreography ---------------- */
+  if (hasGSAP && !reduce) {
+
+    // Hero load sequence
+    const intro = gsap.timeline({ defaults: { ease: 'power3.out' } });
+    intro
+      .from('[data-hero]', { y: 28, opacity: 0, duration: .85, stagger: .11 })
+      .from('[data-hero-art]', { scale: .93, opacity: 0, duration: 1.05 }, '-=.7')
+      .from('#lpNav', { y: -22, opacity: 0, duration: .6 }, '-=.9');
+
+    if (window.ScrollTrigger) {
+
+      // Parallax on the hero grid field
+      gsap.to('#lpHeroBg', {
+        yPercent: 16, ease: 'none',
+        scrollTrigger: { trigger: '.lp-hero', start: 'top top', end: 'bottom top', scrub: .6 }
+      });
+
+      // Hero copy drifts and dims as you scroll past it
+      gsap.to('.lp-hero-copy', {
+        y: -46, opacity: .25, ease: 'none',
+        scrollTrigger: { trigger: '.lp-hero', start: 'top top', end: 'bottom 35%', scrub: .5 }
+      });
+
+      // Schematic lifts slightly slower — depth
+      gsap.to('.lp-schematic', {
+        y: -22, ease: 'none',
+        scrollTrigger: { trigger: '.lp-hero', start: 'top top', end: 'bottom top', scrub: .8 }
+      });
+
+      // Section headings
+      $$('[data-head]').forEach(h => {
+        gsap.from(h, {
+          y: 34, opacity: 0, duration: .8, ease: 'power3.out',
+          scrollTrigger: { trigger: h, start: 'top 84%', once: true }
+        });
+      });
+
+      // Grouped stagger: cards animate together per section
+      const groups = new Map();
+      $$('[data-stagger]').forEach(node => {
+        const parent = node.parentElement;
+        if (!groups.has(parent)) groups.set(parent, []);
+        groups.get(parent).push(node);
+      });
+      groups.forEach((items, parent) => {
+        gsap.from(items, {
+          y: 30, opacity: 0, duration: .7, ease: 'power3.out', stagger: .085,
+          scrollTrigger: { trigger: parent, start: 'top 82%', once: true }
+        });
+      });
+
+      // Spec strip counters
+      $$('[data-spec]').forEach((spec, i) => {
+        ScrollTrigger.create({
+          trigger: spec, start: 'top 92%', once: true,
+          onEnter: () => {
+            gsap.from(spec, { y: 18, opacity: 0, duration: .6, delay: i * .07, ease: 'power3.out' });
+            const c = spec.querySelector('[data-count]');
+            if (!c) return;
+            const target = Number(c.dataset.count);
+            c.textContent = '0';
+            const obj = { n: 0 };
+            gsap.to(obj, {
+              n: target, duration: 1.1, delay: i * .07, ease: 'power2.out',
+              onUpdate: () => { c.textContent = Math.round(obj.n); }
+            });
+          }
+        });
+      });
+
+      // Pipeline arrows nudge forward on scroll
+      gsap.from('.lp-arrow svg', {
+        x: -10, opacity: 0, duration: .6, stagger: .12, ease: 'power2.out',
+        scrollTrigger: { trigger: '.lp-pipeline', start: 'top 80%', once: true }
+      });
+
+      // CTA scales in
+      gsap.from('.lp-cta-inner > *', {
+        y: 26, opacity: 0, duration: .8, stagger: .12, ease: 'power3.out',
+        scrollTrigger: { trigger: '.lp-cta', start: 'top 80%', once: true }
+      });
+    }
+  }
+
+  /* ---------------- Boot on the landing screen ---------------- */
+  showScreen('landing');
+})();
+
+</script>
+</body>
+</html>
