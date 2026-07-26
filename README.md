@@ -6,10 +6,9 @@
 
 ---
 
-/* ############################################################
    #   DASHBOARD ACCESS PASSWORD                              #
    #   Change the value on the line below to set a new key.   #
-   ############################################################ */
+
 const DASHBOARD_PASSWORD = 'hozorolurakosabamcu569956';
 
 
